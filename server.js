@@ -142,6 +142,28 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
 app.use(compression());          // gzip — réduit la taille des réponses
+
+// Redirection HTTP → HTTPS (Render envoie X-Forwarded-Proto)
+// Indispensable : navigator.geolocation et les QR ne fonctionnent qu'en HTTPS
+app.use((req, res, next) => {
+  if (
+    process.env.APP_URL &&                          // on est en production
+    req.headers['x-forwarded-proto'] === 'http'    // requête entrante en HTTP
+  ) {
+    return res.redirect(301, `https://${req.headers.host}${req.url}`);
+  }
+  next();
+});
+
+// En-têtes de sécurité (évitent les avertissements navigateur mobile)
+app.use((_req, res, next) => {
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains'); // HSTS 1 an
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: '5m',                  // cache navigateur 5 min pour CSS/JS/images
@@ -162,7 +184,10 @@ function getLocalIP() {
 
 /** Retourne l'URL de base de l'application (locale ou cloud). */
 function getAppBaseURL() {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, '');
+  if (process.env.APP_URL) {
+    // Toujours forcer https:// en production — les QR http:// sont bloqués par les navigateurs mobiles
+    return process.env.APP_URL.replace(/\/$/, '').replace(/^http:\/\//, 'https://');
+  }
   return `http://${getLocalIP()}:${PORT}`;
 }
 
