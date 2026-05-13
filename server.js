@@ -467,6 +467,300 @@ app.get('/export/excel', async (req, res) => {
   res.end();
 });
 
+// ─── Helpers Rapport d'Heures ─────────────────────────────────────────────────
+
+/** Convertit "HH:MM:SS" ou "HH:MM" en minutes */
+function timeStrToMinutes(str) {
+  if (!str) return 0;
+  const [h, m] = str.split(':').map(Number);
+  return h * 60 + (m || 0);
+}
+
+/** Convertit "DD/MM/YYYY" en timestamp pour comparaison */
+function parseDateFR(str) {
+  if (!str) return 0;
+  const [d, m, y] = str.split('/').map(Number);
+  return new Date(y, m - 1, d).getTime();
+}
+
+/** Nom du jour de la semaine depuis une date FR */
+function jourSemaineFR(dateFR) {
+  const [d, m, y] = dateFR.split('/').map(Number);
+  return ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][new Date(y, m - 1, d).getDay()];
+}
+
+/** Formate des minutes en "Xh MM" */
+function fmtMin(min) {
+  if (min === null || min === undefined) return '—';
+  return `${Math.floor(min / 60)}h${String(Math.round(min % 60)).padStart(2, '0')}`;
+}
+
+/**
+ * Groupe les enregistrements par agent+date, apparie arrivée/sortie,
+ * calcule la durée, filtre par plage de dates.
+ */
+function buildRapportData(records, debut, fin) {
+  const debutTs = parseDateFR(debut);
+  const finTs   = parseDateFR(fin);
+  const agentMap = {};
+
+  for (const r of records) {
+    const ts = parseDateFR(r.date);
+    if (ts < debutTs || ts > finTs) continue;
+    const key = r.nom_agent_lower || r.nom_agent.toLowerCase();
+    if (!agentMap[key]) agentMap[key] = { nom_agent: r.nom_agent, jours: {} };
+    agentMap[key].nom_agent = r.nom_agent;
+    if (!agentMap[key].jours[r.date]) agentMap[key].jours[r.date] = { arrivee: null, sortie: null };
+    if (r.type === 'sortie') agentMap[key].jours[r.date].sortie  = r.heure;
+    else                     agentMap[key].jours[r.date].arrivee = r.heure;
+  }
+
+  return Object.values(agentMap).map(agent => {
+    const jours = Object.entries(agent.jours).map(([date, e]) => {
+      let minutes = null;
+      if (e.arrivee && e.sortie) {
+        const diff = timeStrToMinutes(e.sortie) - timeStrToMinutes(e.arrivee);
+        minutes = diff > 0 ? diff : null;
+      }
+      return { date, arrivee: e.arrivee, sortie: e.sortie, minutes };
+    }).sort((a, b) => parseDateFR(a.date) - parseDateFR(b.date));
+    return { nom_agent: agent.nom_agent, jours };
+  }).sort((a, b) => a.nom_agent.localeCompare(b.nom_agent, 'fr'));
+}
+
+/**
+ * GET /rapports/heures
+ * Retourne tous les pointages groupés par agent/date avec les durées calculées.
+ * Le client gère le filtrage par période.
+ */
+app.get('/rapports/heures', async (req, res) => {
+  try {
+    const snap    = await col.get();
+    const records = snap.docs.map(d => d.data());
+    // Retourner toutes les données (debut/fin = min/max du jeu de données)
+    const agentMap = {};
+    for (const r of records) {
+      const key = r.nom_agent_lower || r.nom_agent.toLowerCase();
+      if (!agentMap[key]) agentMap[key] = { nom_agent: r.nom_agent, jours: {} };
+      agentMap[key].nom_agent = r.nom_agent;
+      if (!agentMap[key].jours[r.date]) agentMap[key].jours[r.date] = { arrivee: null, sortie: null };
+      if (r.type === 'sortie') agentMap[key].jours[r.date].sortie  = r.heure;
+      else                     agentMap[key].jours[r.date].arrivee = r.heure;
+    }
+    const result = Object.values(agentMap).map(agent => {
+      const jours = Object.entries(agent.jours).map(([date, e]) => {
+        let minutes = null;
+        if (e.arrivee && e.sortie) {
+          const diff = timeStrToMinutes(e.sortie) - timeStrToMinutes(e.arrivee);
+          minutes = diff > 0 ? diff : null;
+        }
+        return { date, arrivee: e.arrivee, sortie: e.sortie, minutes };
+      }).sort((a, b) => parseDateFR(a.date) - parseDateFR(b.date));
+      return { nom_agent: agent.nom_agent, jours };
+    }).sort((a, b) => a.nom_agent.localeCompare(b.nom_agent, 'fr'));
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur.' });
+  }
+});
+
+/**
+ * GET /export/rapport/pdf?debut=DD/MM/YYYY&fin=DD/MM/YYYY&titre=...
+ * Export PDF du rapport d'heures par agent pour une période.
+ */
+app.get('/export/rapport/pdf', async (req, res) => {
+  const { debut, fin, titre } = req.query;
+  const dateRe = /^\d{2}\/\d{2}\/\d{4}$/;
+  if (!debut || !fin || !dateRe.test(debut) || !dateRe.test(fin)) {
+    return res.status(400).json({ error: 'Paramètres debut et fin requis (DD/MM/YYYY).' });
+  }
+  let agents;
+  try {
+    const snap = await col.get();
+    agents = buildRapportData(snap.docs.map(d => d.data()), debut, fin);
+  } catch { return res.status(500).end(); }
+
+  const doc = new PDFDocument({ margin: 40, size: 'A4' });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="rapport_heures_${new Date().toISOString().slice(0, 10)}.pdf"`);
+  doc.pipe(res);
+
+  const dateExport   = new Date().toLocaleDateString('fr-FR');
+  const titreDoc     = titre || 'Rapport des Heures de Travail';
+  const periodeLabel = debut === fin ? `Le ${debut}` : `Du ${debut} au ${fin}`;
+
+  doc.fillColor('#0d47a1').fontSize(18).font('Helvetica-Bold').text(titreDoc, { align: 'center' });
+  doc.moveDown(0.3);
+  doc.fillColor('#555').fontSize(10).font('Helvetica').text(`${periodeLabel}   |   Exporté le ${dateExport}`, { align: 'center' });
+  doc.moveDown(1.2);
+
+  const cx  = [40, 155, 255, 345, 420, 490];
+  const cw  = [110, 95,  85,  70,  65,  85];
+  const hdrs = ['Date', 'Arrivée', 'Sortie', 'Durée', 'Jour', 'Statut'];
+  const rowH = 18;
+
+  function drawRapportHeader(y) {
+    doc.rect(40, y, 520, rowH).fill('#e8eaf6');
+    doc.fillColor('#3949ab').fontSize(8).font('Helvetica-Bold');
+    hdrs.forEach((h, i) => doc.text(h, cx[i] + 3, y + 5, { width: cw[i] - 4, lineBreak: false }));
+    return y + rowH;
+  }
+
+  for (const agent of agents) {
+    let y = doc.y;
+    if (y > 680) { doc.addPage(); y = 40; }
+
+    doc.fillColor('#0d47a1').fontSize(12).font('Helvetica-Bold').text(agent.nom_agent, 40, y);
+    y += 18;
+    y = drawRapportHeader(y);
+
+    for (let idx = 0; idx < agent.jours.length; idx++) {
+      if (y > 748) { doc.addPage(); y = 40; y = drawRapportHeader(y); }
+      const j      = agent.jours[idx];
+      const duree  = fmtMin(j.minutes);
+      const statut = j.arrivee && j.sortie ? 'Complet' : j.arrivee ? 'Sans sortie' : 'Sans arr.';
+      if (idx % 2 === 0) doc.rect(40, y, 520, rowH).fill('#f5f7fb');
+      doc.fillColor('#333').fontSize(8).font('Helvetica');
+      [j.date, j.arrivee || '—', j.sortie || '—', duree, jourSemaineFR(j.date), statut].forEach((v, i) => {
+        doc.text(v, cx[i] + 3, y + 5, { width: cw[i] - 4, lineBreak: false });
+      });
+      y += rowH;
+    }
+
+    const totalMin = agent.jours.reduce((s, j) => s + (j.minutes || 0), 0);
+    doc.rect(40, y, 520, rowH).fill('#0d47a1');
+    doc.fillColor('#fff').fontSize(9).font('Helvetica-Bold');
+    doc.text(
+      `Total : ${agent.jours.length} jour(s) — ${fmtMin(totalMin)} de travail`,
+      43, y + 5, { lineBreak: false }
+    );
+    y += rowH + 16;
+    doc.text('', 40, y); // repositionne doc.y
+    doc.moveDown(0.2);
+  }
+  doc.end();
+});
+
+/**
+ * GET /export/rapport/excel?debut=DD/MM/YYYY&fin=DD/MM/YYYY
+ * Export Excel du rapport d'heures : onglet récap + un onglet par agent.
+ */
+app.get('/export/rapport/excel', async (req, res) => {
+  const { debut, fin } = req.query;
+  const dateRe = /^\d{2}\/\d{2}\/\d{4}$/;
+  if (!debut || !fin || !dateRe.test(debut) || !dateRe.test(fin)) {
+    return res.status(400).json({ error: 'Paramètres debut et fin requis (DD/MM/YYYY).' });
+  }
+  let agents;
+  try {
+    const snap = await col.get();
+    agents = buildRapportData(snap.docs.map(d => d.data()), debut, fin);
+  } catch { return res.status(500).end(); }
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Système Pointage';
+
+  // ── Feuille récapitulative ────────────────────────────────────────────────
+  const wsR = wb.addWorksheet('Récapitulatif');
+  wsR.mergeCells('A1:E1');
+  const rc = wsR.getCell('A1');
+  rc.value = `Rapport des Heures — ${debut === fin ? debut : `${debut} au ${fin}`}`;
+  rc.font  = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+  rc.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D47A1' } };
+  rc.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsR.getRow(1).height = 26;
+
+  wsR.columns = [
+    { key: 'nom',    width: 32 },
+    { key: 'jours',  width: 14 },
+    { key: 'htotal', width: 16 },
+    { key: 'moy',    width: 14 },
+    { key: 'incompl',width: 18 },
+  ];
+  const hRowR = wsR.addRow(['Agent', 'Jours pointés', 'Heures totales', 'Moy./jour', 'Incomplets']);
+  hRowR.height = 20;
+  hRowR.eachCell(cell => {
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EAF6' } };
+    cell.font = { bold: true, color: { argb: 'FF3949AB' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+
+  agents.forEach((agent, idx) => {
+    const totalMin    = agent.jours.reduce((s, j) => s + (j.minutes || 0), 0);
+    const joursDone   = agent.jours.filter(j => j.minutes !== null).length;
+    const joursIncmpl = agent.jours.length - joursDone;
+    const moy         = joursDone > 0 ? Math.round(totalMin / joursDone) : 0;
+    const row = wsR.addRow({
+      nom:    agent.nom_agent,
+      jours:  agent.jours.length,
+      htotal: fmtMin(totalMin),
+      moy:    joursDone > 0 ? fmtMin(moy) : '—',
+      incompl: joursIncmpl,
+    });
+    row.height = 18;
+    const fill = idx % 2 === 0 ? 'FFF0F4F8' : 'FFFFFFFF';
+    row.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } } };
+    });
+    wsR.getCell(`A${row.number}`).alignment = { horizontal: 'left', vertical: 'middle' };
+  });
+
+  // ── Une feuille par agent ─────────────────────────────────────────────────
+  for (const agent of agents) {
+    const sheetName = agent.nom_agent.substring(0, 31).replace(/[\\/*?:[\]]/g, '_');
+    const ws = wb.addWorksheet(sheetName);
+    ws.mergeCells('A1:F1');
+    const tc = ws.getCell('A1');
+    tc.value = agent.nom_agent;
+    tc.font  = { bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    tc.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D47A1' } };
+    tc.alignment = { horizontal: 'center', vertical: 'middle' };
+    ws.getRow(1).height = 24;
+
+    ws.columns = [
+      { key: 'date',    width: 14 }, { key: 'jour',    width: 8  },
+      { key: 'arrivee', width: 12 }, { key: 'sortie',  width: 12 },
+      { key: 'duree',   width: 12 }, { key: 'statut',  width: 16 },
+    ];
+    const h2 = ws.addRow(['Date', 'Jour', 'Arrivée', 'Sortie', 'Durée', 'Statut']);
+    h2.height = 20;
+    h2.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8EAF6' } };
+      cell.font = { bold: true, color: { argb: 'FF3949AB' }, size: 10 };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+
+    agent.jours.forEach((j, idx) => {
+      const statut = j.arrivee && j.sortie ? '✓ Complet' : j.arrivee ? '⚠ Sans sortie' : '⚠ Sans arrivée';
+      const row = ws.addRow([j.date, jourSemaineFR(j.date), j.arrivee || '—', j.sortie || '—', fmtMin(j.minutes), statut]);
+      row.height = 17;
+      const fill = idx % 2 === 0 ? 'FFF5F7FB' : 'FFFFFFFF';
+      row.eachCell(cell => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FFE0E0E0' } } };
+      });
+    });
+
+    const totalMin = agent.jours.reduce((s, j) => s + (j.minutes || 0), 0);
+    const tRow = ws.addRow([`${agent.jours.length} jour(s)`, '', '', '', fmtMin(totalMin), 'TOTAL']);
+    tRow.height = 20;
+    tRow.eachCell(cell => {
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D47A1' } };
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    });
+  }
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="rapport_heures_${new Date().toISOString().slice(0, 10)}.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
+});
+
 // ─── Démarrage HTTP ──────────────────────────────────────────────────────────
 app.listen(PORT, '0.0.0.0', () => {
   const base = getAppBaseURL();

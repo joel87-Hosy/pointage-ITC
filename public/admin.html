@@ -208,6 +208,91 @@
         text-align: center;
       }
     }
+
+    /* ─── Onglets ────────────────────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 22px;
+    }
+
+    .tab-btn {
+      padding: 10px 24px;
+      font-size: 14px;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      background: #fff;
+      color: #546e7a;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      transition: all .2s;
+    }
+
+    .tab-btn.active {
+      background: #0d47a1;
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(13,71,161,.3);
+    }
+
+    /* ─── Sélecteur de période ───────────────────────────────────────────────── */
+    .period-bar {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+
+    .period-btn {
+      padding: 8px 20px;
+      font-size: 13px;
+      font-weight: 600;
+      border: 2px solid #e3e8f0;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #f5f7fb;
+      color: #546e7a;
+      transition: all .2s;
+    }
+
+    .period-btn.active {
+      background: #0d47a1;
+      color: #fff;
+      border-color: #0d47a1;
+    }
+
+    /* ─── Cartes stats ───────────────────────────────────────────────────────── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+      margin: 18px 0 6px;
+    }
+
+    .stat-card {
+      background: #f0f4f8;
+      border-radius: 10px;
+      padding: 14px 10px;
+      text-align: center;
+    }
+
+    .stat-val {
+      font-size: 24px;
+      font-weight: 800;
+      color: #0d47a1;
+    }
+
+    .stat-lbl {
+      font-size: 11px;
+      color: #666;
+      margin-top: 3px;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+
+    /* ─── Badges rapport ─────────────────────────────────────────────────────── */
+    .bdg-ok     { background:#e8f5e9; color:#1b5e20; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:700; }
+    .bdg-warn   { background:#fff3e0; color:#e65100; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:700; }
   </style>
 </head>
 <body>
@@ -218,6 +303,15 @@
 </header>
 
 <div class="container">
+
+  <!-- ─── Onglets ─────────────────────────────────────────────────────────── -->
+  <div class="tab-bar">
+    <button id="tab-btn-pointages" class="tab-btn active" onclick="showTab('pointages')">📋 Pointages</button>
+    <button id="tab-btn-rapports"  class="tab-btn"        onclick="showTab('rapports')">⏱ Rapports d'Heures</button>
+  </div>
+
+  <!-- ─── Tab Pointages ────────────────────────────────────────────────────── -->
+  <div id="panel-pointages">
   <div class="grid">
 
     <!-- ─── Panneau QR Code ─────────────────────────────────────────────────── -->
@@ -274,8 +368,106 @@
       </div>
     </div>
 
-  </div>
-</div>
+  </div><!-- /grid -->
+  </div><!-- /panel-pointages -->
+
+  <!-- ─── Tab Rapports d'Heures ────────────────────────────────────────────── -->
+  <div id="panel-rapports" style="display:none">
+    <div class="panel">
+      <p class="panel-title">⏱ Rapports d'Heures de Travail</p>
+
+      <!-- Sélecteur de période -->
+      <div class="period-bar">
+        <button class="period-btn active" id="pb-jour"     onclick="selectPeriode('jour')">📅 Jour</button>
+        <button class="period-btn"        id="pb-semaine"  onclick="selectPeriode('semaine')">📅 Semaine</button>
+        <button class="period-btn"        id="pb-mois"     onclick="selectPeriode('mois')">📅 Mois</button>
+        <button class="period-btn"        id="pb-semestre" onclick="selectPeriode('semestre')">📅 Semestre</button>
+      </div>
+
+      <!-- Contrôles de date -->
+      <div class="toolbar" style="margin-top:14px;flex-wrap:wrap;gap:10px;align-items:center">
+        <div id="ctrl-jour" style="display:flex;align-items:center;gap:8px">
+          <label style="font-size:13px;font-weight:600;color:#555">Date :</label>
+          <input type="date" id="rp-jour-date" style="padding:7px 12px;border:1.5px solid #d0d7e3;border-radius:7px;font-size:13px">
+        </div>
+        <div id="ctrl-semaine" style="display:none;align-items:center;gap:8px">
+          <label style="font-size:13px;font-weight:600;color:#555">Semaine :</label>
+          <input type="week" id="rp-semaine-date" style="padding:7px 12px;border:1.5px solid #d0d7e3;border-radius:7px;font-size:13px">
+        </div>
+        <div id="ctrl-mois" style="display:none;align-items:center;gap:8px">
+          <label style="font-size:13px;font-weight:600;color:#555">Mois :</label>
+          <input type="month" id="rp-mois-date" style="padding:7px 12px;border:1.5px solid #d0d7e3;border-radius:7px;font-size:13px">
+        </div>
+        <div id="ctrl-semestre" style="display:none;align-items:center;gap:8px">
+          <label style="font-size:13px;font-weight:600;color:#555">Semestre :</label>
+          <select id="rp-semestre-sem" style="padding:7px 10px;border:1.5px solid #d0d7e3;border-radius:7px;font-size:13px">
+            <option value="1">S1 — Janv. à Juin</option>
+            <option value="2">S2 — Juil. à Déc.</option>
+          </select>
+          <select id="rp-semestre-annee" style="padding:7px 10px;border:1.5px solid #d0d7e3;border-radius:7px;font-size:13px"></select>
+        </div>
+        <button class="btn" onclick="genererRapport()">📊 Générer</button>
+        <button class="btn grey" id="btn-exp-xlsx" style="display:none" onclick="exportRapportExcel()">⬇ Excel</button>
+        <button class="btn grey" id="btn-exp-pdf"  style="display:none" onclick="exportRapportPDF()">⬇ PDF</button>
+      </div>
+
+      <!-- Cartes stats -->
+      <div id="rapport-resume" style="display:none">
+        <div class="stats-row">
+          <div class="stat-card"><div class="stat-val" id="stat-agents">0</div><div class="stat-lbl">Agents</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-jours">0</div><div class="stat-lbl">Jours pointés</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-heures">—</div><div class="stat-lbl">Heures totales</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-moy">—</div><div class="stat-lbl">Moy./agent/jour</div></div>
+        </div>
+        <p id="rapport-periode-label" style="font-size:12px;color:#888;margin-top:10px;text-align:center"></p>
+      </div>
+
+      <!-- Tableau récapitulatif -->
+      <div id="rapport-table-wrap" style="display:none;margin-top:14px">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Agent</th>
+                <th>Jours</th>
+                <th>Heures totales</th>
+                <th>Moy. / jour</th>
+                <th>Incomplets</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="rapport-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Détail d'un agent -->
+      <div id="rapport-detail" style="display:none;margin-top:26px;padding-top:20px;border-top:2px solid #e8eaf6">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+          <h3 id="detail-nom" style="font-size:15px;color:#0d47a1;font-weight:700;flex:1"></h3>
+          <button onclick="closeDetail()" style="padding:5px 14px;font-size:12px;border:1.5px solid #ccc;border-radius:7px;background:#f5f7fb;cursor:pointer;font-weight:600">✕ Fermer</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th><th>Jour</th><th>Arrivée</th><th>Sortie</th><th>Durée</th><th>Statut</th>
+              </tr>
+            </thead>
+            <tbody id="detail-tbody"></tbody>
+          </table>
+        </div>
+        <p id="detail-total" style="margin-top:12px;font-size:14px;font-weight:700;color:#0d47a1;text-align:right;padding-right:8px"></p>
+      </div>
+
+      <!-- État vide -->
+      <p id="rapport-empty" style="display:none;text-align:center;color:#aaa;padding:50px 0;font-size:14px">
+        📭 Aucune donnée pour cette période.
+      </p>
+    </div>
+  </div><!-- /panel-rapports -->
+
+</div><!-- /container -->
 
 <script>
   'use strict';
@@ -475,6 +667,262 @@
     } catch {
       alert('Impossible de charger le QR statique.');
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  ONGLETS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function showTab(name) {
+    document.getElementById('panel-pointages').style.display = name === 'pointages' ? '' : 'none';
+    document.getElementById('panel-rapports').style.display  = name === 'rapports'  ? '' : 'none';
+    document.getElementById('tab-btn-pointages').classList.toggle('active', name === 'pointages');
+    document.getElementById('tab-btn-rapports').classList.toggle('active',  name === 'rapports');
+    if (name === 'rapports' && !rapportDataCache) loadRapportData();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  RAPPORTS D'HEURES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  let rapportDataCache = null;
+  let rapportPeriode   = 'jour';
+  let rapportFiltered  = [];
+  let rapportDebutFR   = null;
+  let rapportFinFR     = null;
+
+  // ─── Initialisation des contrôles de date ──────────────────────────────────
+  (function initRapportControls() {
+    const today = new Date();
+    document.getElementById('rp-jour-date').value    = today.toISOString().slice(0, 10);
+    document.getElementById('rp-semaine-date').value = isoWeekStr(today);
+    document.getElementById('rp-mois-date').value    =
+      `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+
+    const anneeEl = document.getElementById('rp-semestre-annee');
+    for (let y = today.getFullYear(); y >= today.getFullYear() - 5; y--) {
+      const opt = document.createElement('option');
+      opt.value = y; opt.textContent = y;
+      anneeEl.appendChild(opt);
+    }
+    document.getElementById('rp-semestre-sem').value = today.getMonth() < 6 ? '1' : '2';
+  })();
+
+  function isoWeekStr(d) {
+    const jan4   = new Date(d.getFullYear(), 0, 4);
+    const startW = new Date(jan4);
+    startW.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+    const wk = Math.floor((d - startW) / (7 * 864e5)) + 1;
+    return `${d.getFullYear()}-W${String(wk).padStart(2, '0')}`;
+  }
+
+  function selectPeriode(p) {
+    rapportPeriode = p;
+    ['jour', 'semaine', 'mois', 'semestre'].forEach(x => {
+      const el = document.getElementById('ctrl-' + x);
+      el.style.display = x === p ? 'flex' : 'none';
+      document.getElementById('pb-' + x).classList.toggle('active', x === p);
+    });
+    resetRapportUI();
+  }
+
+  function resetRapportUI() {
+    ['rapport-resume', 'rapport-table-wrap', 'rapport-detail', 'rapport-empty'].forEach(id => {
+      document.getElementById(id).style.display = 'none';
+    });
+    document.getElementById('btn-exp-xlsx').style.display = 'none';
+    document.getElementById('btn-exp-pdf').style.display  = 'none';
+  }
+
+  // ─── Charger données depuis le serveur ─────────────────────────────────────
+  async function loadRapportData() {
+    try {
+      const res        = await fetch('/rapports/heures');
+      rapportDataCache = await res.json();
+    } catch {
+      console.error('Impossible de charger les données de rapport.');
+      rapportDataCache = [];
+    }
+  }
+
+  // ─── Calculer la plage de dates selon la période ───────────────────────────
+  function getPeriodRange() {
+    if (rapportPeriode === 'jour') {
+      const v = document.getElementById('rp-jour-date').value;
+      if (!v) return null;
+      const fr = jsToFR(v);
+      return { debut: fr, fin: fr };
+    }
+    if (rapportPeriode === 'semaine') {
+      const v = document.getElementById('rp-semaine-date').value; // YYYY-Www
+      if (!v) return null;
+      const [year, wk] = v.split('-W').map(Number);
+      const jan4  = new Date(year, 0, 4);
+      const mon   = new Date(jan4);
+      mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (wk - 1) * 7);
+      const sun   = new Date(mon); sun.setDate(mon.getDate() + 6);
+      return { debut: jsToFR(mon.toISOString().slice(0, 10)), fin: jsToFR(sun.toISOString().slice(0, 10)) };
+    }
+    if (rapportPeriode === 'mois') {
+      const v = document.getElementById('rp-mois-date').value; // YYYY-MM
+      if (!v) return null;
+      const [y, m] = v.split('-').map(Number);
+      const last   = new Date(y, m, 0).getDate();
+      return {
+        debut: `01/${String(m).padStart(2,'0')}/${y}`,
+        fin:   `${String(last).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`
+      };
+    }
+    // semestre
+    const sem  = parseInt(document.getElementById('rp-semestre-sem').value);
+    const year = parseInt(document.getElementById('rp-semestre-annee').value);
+    return {
+      debut: sem === 1 ? `01/01/${year}` : `01/07/${year}`,
+      fin:   sem === 1 ? `30/06/${year}` : `31/12/${year}`
+    };
+  }
+
+  function jsToFR(iso) {
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  function parseFR(fr) {
+    const [d, m, y] = fr.split('/').map(Number);
+    return new Date(y, m - 1, d).getTime();
+  }
+
+  function fmtMin(min) {
+    if (min === null || min === undefined) return '—';
+    return `${Math.floor(min / 60)}h${String(Math.round(min % 60)).padStart(2, '0')}`;
+  }
+
+  const JOURS = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+  function jourDeSemaine(fr) {
+    const [d, m, y] = fr.split('/').map(Number);
+    return JOURS[new Date(y, m - 1, d).getDay()];
+  }
+
+  // ─── Générer le rapport ────────────────────────────────────────────────────
+  async function genererRapport() {
+    if (!rapportDataCache) await loadRapportData();
+    const range = getPeriodRange();
+    if (!range) { alert('Veuillez sélectionner une date.'); return; }
+
+    rapportDebutFR = range.debut;
+    rapportFinFR   = range.fin;
+    const debutTs  = parseFR(range.debut);
+    const finTs    = parseFR(range.fin);
+
+    rapportFiltered = rapportDataCache.map(agent => {
+      const jours = agent.jours.filter(j => {
+        const ts = parseFR(j.date);
+        return ts >= debutTs && ts <= finTs;
+      });
+      return { ...agent, jours };
+    }).filter(a => a.jours.length > 0);
+
+    renderRapportTable(rapportFiltered, range);
+  }
+
+  function renderRapportTable(agents, range) {
+    if (agents.length === 0) {
+      document.getElementById('rapport-resume').style.display     = 'none';
+      document.getElementById('rapport-table-wrap').style.display = 'none';
+      document.getElementById('rapport-detail').style.display     = 'none';
+      document.getElementById('btn-exp-xlsx').style.display       = 'none';
+      document.getElementById('btn-exp-pdf').style.display        = 'none';
+      document.getElementById('rapport-empty').style.display      = 'block';
+      return;
+    }
+
+    document.getElementById('rapport-empty').style.display = 'none';
+
+    // Calcul stats globales
+    const totalJours = agents.reduce((s, a) => s + a.jours.length, 0);
+    const totalMin   = agents.reduce((s, a) => s + a.jours.reduce((ss, j) => ss + (j.minutes || 0), 0), 0);
+    const avgMin     = totalJours > 0 ? Math.round(totalMin / totalJours) : 0;
+
+    document.getElementById('stat-agents').textContent = agents.length;
+    document.getElementById('stat-jours').textContent  = totalJours;
+    document.getElementById('stat-heures').textContent = fmtMin(totalMin);
+    document.getElementById('stat-moy').textContent    = fmtMin(avgMin);
+    document.getElementById('rapport-periode-label').textContent =
+      range.debut === range.fin ? `Le ${range.debut}` : `Du ${range.debut} au ${range.fin}`;
+
+    document.getElementById('rapport-resume').style.display     = 'block';
+    document.getElementById('rapport-table-wrap').style.display = 'block';
+    document.getElementById('btn-exp-xlsx').style.display       = '';
+    document.getElementById('btn-exp-pdf').style.display        = '';
+
+    const tbody = document.getElementById('rapport-tbody');
+    tbody.innerHTML = agents.map((agent, agIdx) => {
+      const totalA   = agent.jours.reduce((s, j) => s + (j.minutes || 0), 0);
+      const done     = agent.jours.filter(j => j.minutes !== null).length;
+      const incompl  = agent.jours.length - done;
+      const moy      = done > 0 ? Math.round(totalA / done) : 0;
+      const badgeI   = incompl > 0
+        ? `<span class="bdg-warn">⚠ ${incompl}</span>`
+        : `<span class="bdg-ok">✓</span>`;
+      return `<tr>
+        <td><strong>${escHtml(agent.nom_agent)}</strong></td>
+        <td style="text-align:center">${agent.jours.length}</td>
+        <td style="text-align:center;font-weight:700;color:#0d47a1">${fmtMin(totalA)}</td>
+        <td style="text-align:center">${done > 0 ? fmtMin(moy) : '—'}</td>
+        <td style="text-align:center">${badgeI}</td>
+        <td><button onclick="showDetail(${agIdx})" style="padding:4px 12px;font-size:12px;background:#0d47a1;color:#fff;border:none;border-radius:6px;cursor:pointer">Détail</button></td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('rapport-detail').style.display = 'none';
+  }
+
+  // ─── Détail d'un agent ─────────────────────────────────────────────────────
+  function showDetail(idx) {
+    const agent = rapportFiltered[idx];
+    if (!agent) return;
+    document.getElementById('detail-nom').textContent = '📋 Détail — ' + agent.nom_agent;
+    const totalMin = agent.jours.reduce((s, j) => s + (j.minutes || 0), 0);
+
+    document.getElementById('detail-tbody').innerHTML = agent.jours.map((j, i) => {
+      const statut = j.arrivee && j.sortie
+        ? '<span class="bdg-ok">✓ Complet</span>'
+        : j.arrivee
+          ? '<span class="bdg-warn">⚠ Sans sortie</span>'
+          : '<span class="bdg-warn">⚠ Sans arrivée</span>';
+      return `<tr style="background:${i % 2 === 0 ? '#f5f7ff' : '#fff'}">
+        <td>${escHtml(j.date)}</td>
+        <td style="color:#888">${jourDeSemaine(j.date)}</td>
+        <td>${j.arrivee || '—'}</td>
+        <td>${j.sortie  || '—'}</td>
+        <td style="font-weight:700;color:#0d47a1">${fmtMin(j.minutes)}</td>
+        <td>${statut}</td>
+      </tr>`;
+    }).join('');
+
+    document.getElementById('detail-total').textContent =
+      `Total : ${agent.jours.length} jour(s) — ${fmtMin(totalMin)} de travail`;
+    const detailEl = document.getElementById('rapport-detail');
+    detailEl.style.display = 'block';
+    detailEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function closeDetail() {
+    document.getElementById('rapport-detail').style.display = 'none';
+  }
+
+  // ─── Exports rapport ───────────────────────────────────────────────────────
+  function exportRapportExcel() {
+    if (!rapportDebutFR || !rapportFinFR) return;
+    window.location.href =
+      `/export/rapport/excel?debut=${encodeURIComponent(rapportDebutFR)}&fin=${encodeURIComponent(rapportFinFR)}`;
+  }
+
+  function exportRapportPDF() {
+    if (!rapportDebutFR || !rapportFinFR) return;
+    const titre = encodeURIComponent('Rapport des Heures de Travail');
+    window.location.href =
+      `/export/rapport/pdf?debut=${encodeURIComponent(rapportDebutFR)}&fin=${encodeURIComponent(rapportFinFR)}&titre=${titre}`;
   }
 </script>
 </body>
