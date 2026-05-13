@@ -5,51 +5,47 @@ const QRCode      = require('qrcode');
 const crypto      = require('crypto');
 const path        = require('path');
 const os          = require('os');
-const { Pool }    = require('pg');
+const admin       = require('firebase-admin');
 const PDFDocument = require('pdfkit');
 const ExcelJS     = require('exceljs');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
-// ─── Base de données PostgreSQL ───────────────────────────────────────────────
+// ─── Firebase / Firestore ─────────────────────────────────────────────────────
 
-if (!process.env.DATABASE_URL) {
-  console.error('ERREUR : La variable DATABASE_URL est manquante.');
-  console.error('Sur Railway : liez un service PostgreSQL à votre application.');
+if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+  console.error('ERREUR : La variable FIREBASE_SERVICE_ACCOUNT est manquante.');
   process.exit(1);
 }
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
-});
-
-async function initDB() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS pointages (
-      id        SERIAL PRIMARY KEY,
-      nom_agent VARCHAR(100) NOT NULL,
-      date      VARCHAR(20)  NOT NULL,
-      heure     VARCHAR(20)  NOT NULL,
-      device_id VARCHAR(64)  DEFAULT 'inconnu'
-    )
-  `);
+let serviceAccount;
+try {
+  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+} catch {
+  console.error('ERREUR : FIREBASE_SERVICE_ACCOUNT n\'est pas un JSON valide.');
+  process.exit(1);
 }
 
-// Helper : retourne tous les enregistrements filtrés par date optionnelle
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+
+const db  = admin.firestore();
+const col = db.collection('pointages');
+
+// Helper : retourne les enregistrements triés, filtrés par date optionnelle
 async function fetchRecords(date) {
-  if (date) {
-    const { rows } = await pool.query(
-      'SELECT * FROM pointages WHERE date = $1 ORDER BY id DESC',
-      [date]
-    );
-    return rows;
-  }
-  const { rows } = await pool.query(
-    'SELECT * FROM pointages ORDER BY id DESC LIMIT 1000'
-  );
-  return rows;
+  let query = col.orderBy('id', 'desc').limit(1000);
+  if (date) query = col.where('date', '==', date).orderBy('id', 'desc');
+  const snap = await query.get();
+  return snap.docs.map(d => d.data());
+}
+
+// Helper : prochain ID auto-incrémenté
+async function nextAutoId() {
+  const snap = await col.orderBy('id', 'desc').limit(1).get();
+  return snap.empty ? 1 : snap.docs[0].data().id + 1;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -234,12 +230,13 @@ app.post('/pointer', async (req, res) => {
   const did = typeof device_id === 'string' ? device_id.substring(0, 64) : null;
 
   try {
+    const id = await nextAutoId();
     // Bloquer si même nom aujourd'hui
-    const { rows: byName } = await pool.query(
-      'SELECT 1 FROM pointages WHERE LOWER(nom_agent) = LOWER($1) AND date = $2 LIMIT 1',
-      [nom, date]
-    );
-    if (byName.length) {
+    const byName = await col
+      .where('nom_agent_lower', '==', nom.toLowerCase())
+      .where('date', '==', date)
+      .limit(1).get();
+    if (!byName.empty) {
       return res.status(409).json({
         error: `Vous avez déjà pointé aujourd'hui (${date}). Un seul pointage par jour est autorisé.`
       });
@@ -247,22 +244,20 @@ app.post('/pointer', async (req, res) => {
 
     // Bloquer si même appareil aujourd'hui
     if (did) {
-      const { rows: byDevice } = await pool.query(
-        'SELECT 1 FROM pointages WHERE device_id = $1 AND date = $2 LIMIT 1',
-        [did, date]
-      );
-      if (byDevice.length) {
+      const byDevice = await col
+        .where('device_id', '==', did)
+        .where('date', '==', date)
+        .limit(1).get();
+      if (!byDevice.empty) {
         return res.status(409).json({
           error: `Cet appareil a déjà été utilisé pour pointer aujourd'hui (${date}). Un seul pointage par appareil est autorisé.`
         });
       }
     }
 
-    const { rows } = await pool.query(
-      'INSERT INTO pointages (nom_agent, date, heure, device_id) VALUES ($1, $2, $3, $4) RETURNING *',
-      [nom, date, heure, did || 'inconnu']
-    );
-    res.status(201).json({ success: true, ...rows[0] });
+    const record = { id, nom_agent: nom, nom_agent_lower: nom.toLowerCase(), date, heure, device_id: did || 'inconnu' };
+    await col.add(record);
+    res.status(201).json({ success: true, id, nom_agent: nom, date, heure });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur lors du pointage.' });
@@ -293,8 +288,10 @@ app.get('/records', async (req, res) => {
  */
 app.delete('/reset', async (req, res) => {
   try {
-    await pool.query('DELETE FROM pointages');
-    await pool.query('ALTER SEQUENCE pointages_id_seq RESTART WITH 1');
+    const snap = await col.get();
+    const batch = db.batch();
+    snap.docs.forEach(d => batch.delete(d.ref));
+    await batch.commit();
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -453,21 +450,16 @@ app.get('/export/excel', async (req, res) => {
   res.end();
 });
 
-// ─── Démarrage HTTP (après init DB) ─────────────────────────────────────────
-initDB().then(() => {
-  app.listen(PORT, '0.0.0.0', () => {
-    const base = getAppBaseURL();
-    console.log('\n╔══════════════════════════════════════════════╗');
-    console.log('║        Système de Pointage QR Code           ║');
-    console.log('╚══════════════════════════════════════════════╝');
-    console.log(`\n  Serveur démarré sur le port ${PORT}`);
-    console.log(`  URL de pointage  : ${base}/pointage`);
-    console.log(`  Kiosque (ecran)  : ${base}/kiosk`);
-    console.log(`  Page admin       : ${base}/admin`);
-    console.log(`\n  Locaux configurés : lat=${OFFICE_LAT}, lng=${OFFICE_LNG}`);
-    console.log(`  Rayon autorisé    : ${MAX_RADIUS_M} m | Token TTL : ${TOKEN_TTL_MS / 1000} s\n`);
-  });
-}).catch(err => {
-  console.error('Impossible de se connecter à la base de données :', err.message);
-  process.exit(1);
+// ─── Démarrage HTTP ──────────────────────────────────────────────────────────
+app.listen(PORT, '0.0.0.0', () => {
+  const base = getAppBaseURL();
+  console.log('\n╔══════════════════════════════════════════════╗');
+  console.log('║        Système de Pointage QR Code           ║');
+  console.log('╚══════════════════════════════════════════════╝');
+  console.log(`\n  Serveur démarré sur le port ${PORT}`);
+  console.log(`  URL de pointage  : ${base}/pointage`);
+  console.log(`  Kiosque (ecran)  : ${base}/kiosk`);
+  console.log(`  Page admin       : ${base}/admin`);
+  console.log(`\n  Locaux configurés : lat=${OFFICE_LAT}, lng=${OFFICE_LNG}`);
+  console.log(`  Rayon autorisé    : ${MAX_RADIUS_M} m | Token TTL : ${TOKEN_TTL_MS / 1000} s\n`);
 });
