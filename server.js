@@ -190,12 +190,16 @@ app.get('/admin', (_req, res) => {
  * → impossible pour l'agent de falsifier l'heure via son téléphone.
  */
 app.post('/pointer', async (req, res) => {
-  const { nom_agent: rawName, token, lat, lng, device_id } = req.body || {};
+  const { nom_agent: rawName, token, lat, lng, device_id, type } = req.body || {};
 
   // ── 1. Validation du nom ──────────────────────────────────────────────────
   if (typeof rawName !== 'string' || rawName.trim().length === 0) {
     return res.status(400).json({ error: "Le nom de l'agent est requis." });
   }
+
+  // ── 1b. Type de pointage (arrivée ou sortie) ──────────────────────────────
+  const pointageType = (type === 'sortie') ? 'sortie' : 'arrivee';
+  const typeLabel    = pointageType === 'arrivee' ? "d'arrivée" : "de sortie";
 
   // ── 2. Token rotatif → uniquement si fourni (mode écran dynamique) ────────────
   //    Sans token = mode affiche imprimée → la géo seule bloque les absents
@@ -224,40 +228,50 @@ app.post('/pointer', async (req, res) => {
     }
   }
 
-  // ── 4. Vérification doublon : un seul pointage par agent/appareil par jour ─
+  // ── 4. Vérification doublon : un seul pointage par type/agent/appareil par jour ─
   const nom = rawName.trim().substring(0, 100);
   const { date, heure } = getServerDateTime();
   const did = typeof device_id === 'string' ? device_id.substring(0, 64) : null;
 
   try {
     const id = await nextAutoId();
-    // Bloquer si même nom aujourd'hui
+    // Bloquer si même nom + même type aujourd'hui
     const byName = await col
       .where('nom_agent_lower', '==', nom.toLowerCase())
       .where('date', '==', date)
+      .where('type', '==', pointageType)
       .limit(1).get();
     if (!byName.empty) {
       return res.status(409).json({
-        error: `Vous avez déjà pointé aujourd'hui (${date}). Un seul pointage par jour est autorisé.`
+        error: `Vous avez déjà effectué un pointage ${typeLabel} aujourd'hui (${date}).`
       });
     }
 
-    // Bloquer si même appareil aujourd'hui
+    // Bloquer si même appareil + même type aujourd'hui
     if (did) {
       const byDevice = await col
         .where('device_id', '==', did)
         .where('date', '==', date)
+        .where('type', '==', pointageType)
         .limit(1).get();
       if (!byDevice.empty) {
         return res.status(409).json({
-          error: `Cet appareil a déjà été utilisé pour pointer aujourd'hui (${date}). Un seul pointage par appareil est autorisé.`
+          error: `Cet appareil a déjà été utilisé pour un pointage ${typeLabel} aujourd'hui (${date}).`
         });
       }
     }
 
-    const record = { id, nom_agent: nom, nom_agent_lower: nom.toLowerCase(), date, heure, device_id: did || 'inconnu' };
+    const record = {
+      id,
+      nom_agent: nom,
+      nom_agent_lower: nom.toLowerCase(),
+      date,
+      heure,
+      type: pointageType,
+      device_id: did || 'inconnu'
+    };
     await col.add(record);
-    res.status(201).json({ success: true, id, nom_agent: nom, date, heure });
+    res.status(201).json({ success: true, id, nom_agent: nom, date, heure, type: pointageType });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur lors du pointage.' });
@@ -362,9 +376,9 @@ app.get('/export/pdf', async (req, res) => {
   doc.moveDown(1);
 
   // Colonnes
-  const colX    = [40, 260, 390];
-  const colW    = [215, 125, 115];
-  const headers = ['Nom Complet', 'Date du jour', "Heure d'arrivée"];
+  const colX    = [40, 230, 310, 420];
+  const colW    = [185, 75, 105, 110];
+  const headers = ['Nom Complet', 'Type', 'Date du jour', 'Heure'];
   const rowH    = 22;
 
   function drawRow(y, values, isHeader) {
@@ -386,7 +400,8 @@ app.get('/export/pdf', async (req, res) => {
   filtered.forEach((r, idx) => {
     if (y > 760) { doc.addPage(); y = 40; drawRow(y, headers, true); y += rowH; }
     if (idx % 2 === 0) doc.rect(40, y, 530, rowH).fill('#f0f4f8');
-    drawRow(y, [r.nom_agent, r.date, r.heure], false);
+    const typeLabel = (r.type === 'sortie') ? 'Sortie' : 'Arrivée';
+    drawRow(y, [r.nom_agent, typeLabel, r.date, r.heure], false);
     y += rowH;
   });
 
@@ -410,9 +425,10 @@ app.get('/export/excel', async (req, res) => {
   const ws = wb.addWorksheet('Pointages');
 
   ws.columns = [
-    { header: 'Nom Complet',    key: 'nom',   width: 35 },
-    { header: 'Date du jour',   key: 'date',  width: 18 },
-    { header: "Heure d'arrivée", key: 'heure', width: 18 }
+    { header: 'Nom Complet',  key: 'nom',   width: 32 },
+    { header: 'Type',         key: 'type',  width: 12 },
+    { header: 'Date du jour', key: 'date',  width: 16 },
+    { header: 'Heure',        key: 'heure', width: 14 }
   ];
 
   // Style en-tête
@@ -429,12 +445,13 @@ app.get('/export/excel', async (req, res) => {
   headerRow.height = 22;
 
   filtered.forEach((r, idx) => {
-    const row = ws.addRow({ nom: r.nom_agent, date: r.date, heure: r.heure });
+    const typeLabel = (r.type === 'sortie') ? 'Sortie' : 'Arrivée';
+    const row = ws.addRow({ nom: r.nom_agent, type: typeLabel, date: r.date, heure: r.heure });
     row.height = 18;
     const fill = idx % 2 === 0 ? 'FFF0F4F8' : 'FFFFFFFF';
-    row.eachCell(cell => {
+    row.eachCell((cell, colNum) => {
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
-      cell.alignment = { vertical: 'middle', horizontal: idx === 0 ? 'left' : 'center' };
+      cell.alignment = { vertical: 'middle', horizontal: colNum === 1 ? 'left' : 'center' };
       cell.border = {
         top: { style: 'thin', color: { argb: 'FFD0D0D0' } },
         bottom: { style: 'thin', color: { argb: 'FFD0D0D0' } },

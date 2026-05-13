@@ -64,6 +64,38 @@
 
     input[type="text"]:focus { border-color: #0d47a1; }
 
+    /* ── Toggle Arrivée / Sortie ── */
+    .type-toggle {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 22px;
+    }
+
+    .type-btn {
+      flex: 1;
+      padding: 11px 6px;
+      font-size: 13.5px;
+      font-weight: 700;
+      border: 2px solid #e3e8f0;
+      border-radius: 10px;
+      cursor: pointer;
+      background: #f5f7fb;
+      color: #666;
+      transition: all .2s;
+    }
+
+    .type-btn.active-arrivee {
+      background: #e8f5e9;
+      border-color: #43a047;
+      color: #1b5e20;
+    }
+
+    .type-btn.active-sortie {
+      background: #fff3e0;
+      border-color: #fb8c00;
+      color: #e65100;
+    }
+
     button[type="submit"] {
       width: 100%;
       padding: 14px;
@@ -144,7 +176,7 @@
   <div class="card">
     <div class="icon">&#128203;</div>
     <h1>Pointage des Agents</h1>
-    <p class="subtitle">Entrez votre nom complet pour enregistrer votre présence</p>
+    <p class="subtitle">Sélectionnez le type de pointage puis entrez votre nom</p>
 
     <!-- Statut GPS -->
     <div id="geo-box" class="geo-status">
@@ -153,6 +185,12 @@
     </div>
 
     <form id="form" autocomplete="off" novalidate style="display:none">
+      <!-- Toggle Arrivée / Sortie -->
+      <div class="type-toggle">
+        <button type="button" id="btn-arrivee" class="type-btn active-arrivee" onclick="selectType('arrivee')">🟢 Arrivée</button>
+        <button type="button" id="btn-sortie"  class="type-btn" onclick="selectType('sortie')">🔴 Sortie</button>
+      </div>
+
       <label for="nom">Nom Complet</label>
       <input
         id="nom"
@@ -161,7 +199,7 @@
         maxlength="100"
         required
       >
-      <button id="btn" type="submit">Valider le Pointage ✓</button>
+      <button id="btn" type="submit">✅ Valider le Pointage Arrivée</button>
     </form>
 
     <div id="alert" class="alert" role="alert" aria-live="polite"></div>
@@ -174,13 +212,33 @@
     const urlParams = new URLSearchParams(window.location.search);
     const TOKEN = urlParams.get('token');
 
-    const form    = document.getElementById('form');
-    const btn     = document.getElementById('btn');
-    const alertEl = document.getElementById('alert');
-    const geoBox  = document.getElementById('geo-box');
+    const form      = document.getElementById('form');
+    const btn       = document.getElementById('btn');
+    const alertEl   = document.getElementById('alert');
+    const geoBox    = document.getElementById('geo-box');
+    const btnArr    = document.getElementById('btn-arrivee');
+    const btnSortie = document.getElementById('btn-sortie');
 
-    let userLat = null;
-    let userLng = null;
+    let userLat      = null;
+    let userLng      = null;
+    let selectedType = 'arrivee'; // type actif
+
+    function selectType(type) {
+      selectedType = type;
+      if (type === 'arrivee') {
+        btnArr.className    = 'type-btn active-arrivee';
+        btnSortie.className = 'type-btn';
+        btn.textContent     = '✅ Valider le Pointage Arrivée';
+        btn.style.background = '#1b5e20';
+      } else {
+        btnArr.className    = 'type-btn';
+        btnSortie.className = 'type-btn active-sortie';
+        btn.textContent     = '✅ Valider le Pointage Sortie';
+        btn.style.background = '#e65100';
+      }
+      // Reset alerte si l'agent change de type après un échec
+      alertEl.style.display = 'none';
+    }
 
     function escHtml(str) {
       return String(str)
@@ -210,15 +268,9 @@
     }
     const DEVICE_ID = getDeviceId();
 
-    // Vérification locale : déjà pointé aujourd'hui depuis cet appareil ?
-    const todayKey = 'pointage_done_' + new Date().toLocaleDateString('fr-FR');
-    if (localStorage.getItem(todayKey)) {
-      showFatalError('Vous avez déjà pointé aujourd\'hui depuis cet appareil.');
-    }
-
     // ─── Formulaire affiché directement, GPS tentée en arrière-plan ──────────
     geoBox.style.display = 'none';
-    form.style.display   = localStorage.getItem(todayKey) ? 'none' : 'block';
+    form.style.display   = 'block';
 
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -246,28 +298,43 @@
         const res = await fetch('/pointer', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          // token + coordonnées → le timestamp est généré côté serveur uniquement
           body: JSON.stringify({
             nom_agent: nom,
             token:     TOKEN,
             lat:       userLat,
             lng:       userLng,
-            device_id: DEVICE_ID
+            device_id: DEVICE_ID,
+            type:      selectedType
           })
         });
 
         const data = await res.json();
 
         if (res.ok) {
+          const isArrivee  = data.type !== 'sortie';
+          const typeLabel  = isArrivee ? 'Arrivée' : 'Sortie';
+          const typeEmoji  = isArrivee ? '🟢' : '🔴';
           alertEl.className = 'alert success';
           alertEl.innerHTML =
-            '<strong>✅ Pointage enregistré avec succès !</strong><br>' +
-            `Agent : <strong>${escHtml(data.nom_agent)}</strong><br>` +
-            `Date  : <strong>${data.date}</strong><br>` +
-            `Heure : <strong>${data.heure}</strong>`;
-          form.reset();
-          form.style.display = 'none'; // empêche un double pointage
-          localStorage.setItem(todayKey, '1'); // verrou local pour aujourd'hui
+            `<strong>✅ Pointage ${typeLabel} enregistré !</strong><br>` +
+            `${typeEmoji} Agent : <strong>${escHtml(data.nom_agent)}</strong><br>` +
+            `📅 Date  : <strong>${data.date}</strong><br>` +
+            `🕐 Heure : <strong>${data.heure}</strong>`;
+
+          // Verrou local par type pour cet appareil aujourd'hui
+          const todayKey = 'pointage_' + selectedType + '_done_' + new Date().toLocaleDateString('fr-FR');
+          localStorage.setItem(todayKey, '1');
+
+          // Masquer le bouton du type déjà effectué
+          if (isArrivee) {
+            btnArr.disabled    = true;
+            btnArr.textContent = '✅ Arrivée faite';
+          } else {
+            btnSortie.disabled    = true;
+            btnSortie.textContent = '✅ Sortie faite';
+          }
+
+          document.getElementById('nom').value = '';
         } else {
           alertEl.className   = 'alert error';
           alertEl.textContent = '❌ ' + (data.error || 'Une erreur est survenue.');
@@ -279,7 +346,8 @@
 
       alertEl.style.display = 'block';
       btn.disabled    = false;
-      btn.textContent = 'Valider le Pointage ✓';
+      const currentLabel = selectedType === 'arrivee' ? '✅ Valider le Pointage Arrivée' : '✅ Valider le Pointage Sortie';
+      btn.textContent = currentLabel;
     });
   </script>
 </body>

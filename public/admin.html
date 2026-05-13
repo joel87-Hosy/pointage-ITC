@@ -263,6 +263,7 @@
             <tr>
               <th>#</th>
               <th>Nom de l'Agent</th>
+              <th>Type</th>
               <th>Date</th>
               <th>Heure</th>
             </tr>
@@ -374,22 +375,32 @@
     }
 
     empty.style.display = 'none';
-    tbody.innerHTML = rows.map((r) =>
-      `<tr>
+    tbody.innerHTML = rows.map((r) => {
+      const isArrivee = r.type !== 'sortie';
+      const badge = isArrivee
+        ? `<span style="background:#e8f5e9;color:#1b5e20;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">🟢 Arrivée</span>`
+        : `<span style="background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">🔴 Sortie</span>`;
+      return `<tr>
         <td>${r.id}</td>
         <td><strong>${escHtml(r.nom_agent)}</strong></td>
+        <td>${badge}</td>
         <td>${escHtml(r.date)}</td>
         <td>${escHtml(r.heure)}</td>
-      </tr>`
-    ).join('');
+      </tr>`;
+    }).join('');
   }
 
   // ─── Export CSV ────────────────────────────────────────────────────────────
   function exportCSV() {
     if (!currentRecords.length) return;
 
-    const header = ['Nom Complet', 'Date du jour', "Heure d'arrivée"];
-    const rows   = currentRecords.map(r => [r.nom_agent, r.date, r.heure]);
+    const header = ['Nom Complet', 'Type', 'Date du jour', 'Heure'];
+    const rows   = currentRecords.map(r => [
+      r.nom_agent,
+      r.type === 'sortie' ? 'Sortie' : 'Arrivée',
+      r.date,
+      r.heure
+    ]);
     const csv    = [header, ...rows]
       .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
       .join('\r\n');
