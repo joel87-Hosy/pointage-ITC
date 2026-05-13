@@ -179,7 +179,7 @@ function getServerDateTime() {
 
 // Page de pointage (ouverte par le QR code)
 app.get('/pointage', (_req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=300'); // 5 min — le token est dans l'URL, pas dans le HTML
+  res.setHeader('Cache-Control', 'no-store'); // jamais en cache — le token dans l'URL change toutes les 30s
   res.sendFile(path.join(__dirname, 'public', 'pointage.html'));
 });
 
@@ -857,6 +857,10 @@ app.get('/export/rapport/excel', async (req, res) => {
 });
 
 // ─── Démarrage HTTP ──────────────────────────────────────────────────────────
+
+// Health-check — utilisé par Render et le self-ping pour garder le serveur éveillé
+app.get('/health', (_req, res) => res.json({ status: 'ok', ts: Date.now() }));
+
 app.listen(PORT, '0.0.0.0', () => {
   const base = getAppBaseURL();
   console.log('\n╔══════════════════════════════════════════════╗');
@@ -868,4 +872,13 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  Page admin       : ${base}/admin`);
   console.log(`\n  Locaux configurés : lat=${OFFICE_LAT}, lng=${OFFICE_LNG}`);
   console.log(`  Rayon autorisé    : ${MAX_RADIUS_M} m | Token TTL : ${TOKEN_TTL_MS / 1000} s\n`);
+
+  // Self-ping toutes les 10 min pour éviter le sleep sur Render (plan hobby)
+  if (process.env.APP_URL) {
+    const PING_URL = process.env.APP_URL.replace(/\/$/, '') + '/health';
+    setInterval(() => {
+      fetch(PING_URL).catch(() => {}); // silencieux
+    }, 10 * 60 * 1000);
+    console.log(`  Self-ping actif   : ${PING_URL} (toutes les 10 min)\n`);
+  }
 });
