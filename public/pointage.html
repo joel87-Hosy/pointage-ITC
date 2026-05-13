@@ -314,12 +314,26 @@
           const isArrivee  = data.type !== 'sortie';
           const typeLabel  = isArrivee ? 'Arrivée' : 'Sortie';
           const typeEmoji  = isArrivee ? '🟢' : '🔴';
-          alertEl.className = 'alert success';
-          alertEl.innerHTML =
+
+          // Message principal
+          let html =
             `<strong>✅ Pointage ${typeLabel} enregistré !</strong><br>` +
             `${typeEmoji} Agent : <strong>${escHtml(data.nom_agent)}</strong><br>` +
             `📅 Date  : <strong>${data.date}</strong><br>` +
             `🕐 Heure : <strong>${data.heure}</strong>`;
+
+          // Message alerte retard / heures sup
+          if (data.alerte) {
+            const isRetard = data.alerte.type === 'retard';
+            html += `<div style="margin-top:12px;padding:10px 12px;border-radius:8px;` +
+              (isRetard
+                ? `background:#ffebee;border:1px solid #ef9a9a;color:#b71c1c;`
+                : `background:#fff3e0;border:1px solid #ffcc80;color:#e65100;`) +
+              `font-size:13px;font-weight:600;">${escHtml(data.alerte.message)}</div>`;
+          }
+
+          alertEl.className = 'alert success';
+          alertEl.innerHTML = html;
 
           // Verrou local par type pour cet appareil aujourd'hui
           const todayKey = 'pointage_' + selectedType + '_done_' + new Date().toLocaleDateString('fr-FR');

@@ -58,6 +58,12 @@ const MAX_RADIUS_M = 500;     // rayon maximum autorisé (mètres)
 const GEO_REQUIRED = false;   // GPS optionnel — token rotatif 30s assure la sécurité
 const TOKEN_TTL_MS = 30_000;  // durée de vie d'un token QR (millisecondes)
 
+// ─── Règles horaires ────────────────────────────────────────────────────────
+const HEURE_DEBUT_MIN  =  8 * 60;       // 08:00 — heure de prise de poste
+const HEURE_FIN_MIN    = 17 * 60 + 30;  // 17:30 — heure de fin normale
+const SEUIL_RETARD_MIN =  9 * 60;       // 09:00 — alerte retard si arrivée > 09h00 (1h de grâce)
+const SEUIL_HS_MIN     = 18 * 60 + 30;  // 18:30 — alerte HS si sortie > 18h30 (1h après fin)
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TOKENS ROTATIFS — anti-partage de lien
 //  Principe : le QR code encode /pointage?token=<hmac>  où le token change
@@ -271,7 +277,27 @@ app.post('/pointer', async (req, res) => {
       device_id: did || 'inconnu'
     };
     await col.add(record);
-    res.status(201).json({ success: true, id, nom_agent: nom, date, heure, type: pointageType });
+
+    // ── Calcul alerte retard / heures supplémentaires ─────────────────────
+    let alerte = null;
+    const heureMin = timeStrToMinutes(heure);
+    if (pointageType === 'arrivee' && heureMin > SEUIL_RETARD_MIN) {
+      const retardMin = heureMin - HEURE_DEBUT_MIN;
+      alerte = {
+        type: 'retard',
+        minutes: retardMin,
+        message: `⚠️ Retard de ${fmtMin(retardMin)} — Arrivée à ${heure} (début prévu : 08h00).`
+      };
+    } else if (pointageType === 'sortie' && heureMin > SEUIL_HS_MIN) {
+      const hsMin = heureMin - HEURE_FIN_MIN;
+      alerte = {
+        type: 'heures_sup',
+        minutes: hsMin,
+        message: `ℹ️ Heures supplémentaires : +${fmtMin(hsMin)} — Sortie à ${heure} (fin prévue : 17h30).`
+      };
+    }
+
+    res.status(201).json({ success: true, id, nom_agent: nom, date, heure, type: pointageType, alerte });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur lors du pointage.' });
@@ -465,6 +491,72 @@ app.get('/export/excel', async (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="pointages_${new Date().toISOString().slice(0,10)}.xlsx"`);
   await wb.xlsx.write(res);
   res.end();
+});
+
+/**
+ * GET /alertes
+ * Retourne les alertes de retard, d'heures supplémentaires et le cumul HS mensuel par agent.
+ */
+app.get('/alertes', async (req, res) => {
+  try {
+    const snap    = await col.get();
+    const records = snap.docs.map(d => d.data());
+
+    const retards = [];
+    const hsSup   = [];
+    const agentHSMap = {}; // cumul HS mensuel par agent
+
+    for (const r of records) {
+      const heureMin = timeStrToMinutes(r.heure);
+      const key      = r.nom_agent_lower || r.nom_agent.toLowerCase();
+      const [d, m, y] = (r.date || '').split('/');
+      const moisKey  = m && y ? `${m}/${y}` : '??';
+
+      if (r.type !== 'sortie') {
+        // Retard
+        if (heureMin > SEUIL_RETARD_MIN) {
+          retards.push({
+            nom_agent:    r.nom_agent,
+            date:         r.date,
+            heure:        r.heure,
+            retard_min:   heureMin - HEURE_DEBUT_MIN
+          });
+        }
+      } else {
+        // Heures supplémentaires
+        if (heureMin > SEUIL_HS_MIN) {
+          const hsMin = heureMin - HEURE_FIN_MIN;
+          hsSup.push({
+            nom_agent: r.nom_agent,
+            date:      r.date,
+            heure:     r.heure,
+            hs_min:    hsMin
+          });
+          if (!agentHSMap[key]) agentHSMap[key] = { nom_agent: r.nom_agent, mois: {} };
+          agentHSMap[key].mois[moisKey] = (agentHSMap[key].mois[moisKey] || 0) + hsMin;
+        }
+      }
+    }
+
+    retards.sort((a, b) => parseDateFR(b.date) - parseDateFR(a.date));
+    hsSup.sort((a, b) => parseDateFR(b.date) - parseDateFR(a.date));
+
+    const cumulHS = Object.values(agentHSMap).map(agent => ({
+      nom_agent: agent.nom_agent,
+      mois: Object.entries(agent.mois)
+        .map(([mois, minutes]) => ({ mois, minutes }))
+        .sort((a, b) => {
+          const [ma, ya] = a.mois.split('/').map(Number);
+          const [mb, yb] = b.mois.split('/').map(Number);
+          return new Date(yb, mb - 1) - new Date(ya, ma - 1);
+        })
+    })).sort((a, b) => a.nom_agent.localeCompare(b.nom_agent, 'fr'));
+
+    res.json({ retards, hsSup, cumulHS });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur serveur.' });
+  }
 });
 
 // ─── Helpers Rapport d'Heures ─────────────────────────────────────────────────

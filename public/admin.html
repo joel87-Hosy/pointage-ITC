@@ -293,6 +293,45 @@
     /* ─── Badges rapport ─────────────────────────────────────────────────────── */
     .bdg-ok     { background:#e8f5e9; color:#1b5e20; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:700; }
     .bdg-warn   { background:#fff3e0; color:#e65100; font-size:11px; padding:2px 8px; border-radius:10px; font-weight:700; }
+
+    /* ─── Alertes ────────────────────────────────────────────────────────────────── */
+    .alerte-section-title {
+      font-size: 13px;
+      font-weight: 800;
+      margin: 22px 0 12px;
+      padding-bottom: 6px;
+      border-bottom: 2px solid #e8eaf6;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .alerte-section-title.retard  { color: #b71c1c; border-color: #ef9a9a; }
+    .alerte-section-title.hs      { color: #e65100; border-color: #ffcc80; }
+    .alerte-section-title.cumul   { color: #1565c0; border-color: #90caf9; }
+
+    .bdg-retard { background:#ffebee; color:#b71c1c; font-size:11px; padding:2px 9px; border-radius:10px; font-weight:700; }
+    .bdg-hs     { background:#fff3e0; color:#e65100; font-size:11px; padding:2px 9px; border-radius:10px; font-weight:700; }
+    .bdg-info   { background:#e3f2fd; color:#1565c0; font-size:11px; padding:2px 9px; border-radius:10px; font-weight:700; }
+
+    .alert-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .alert-stat-card {
+      border-radius: 10px;
+      padding: 14px 10px;
+      text-align: center;
+    }
+    .alert-stat-card.red  { background: #ffebee; }
+    .alert-stat-card.orange { background: #fff3e0; }
+    .alert-stat-card.blue { background: #e3f2fd; }
+    .alert-stat-val { font-size: 28px; font-weight: 800; }
+    .alert-stat-val.red    { color: #b71c1c; }
+    .alert-stat-val.orange { color: #e65100; }
+    .alert-stat-val.blue   { color: #1565c0; }
+    .alert-stat-lbl { font-size: 11px; color: #666; margin-top: 4px; text-transform: uppercase; letter-spacing: .4px; }
   </style>
 </head>
 <body>
@@ -308,6 +347,7 @@
   <div class="tab-bar">
     <button id="tab-btn-pointages" class="tab-btn active" onclick="showTab('pointages')">📋 Pointages</button>
     <button id="tab-btn-rapports"  class="tab-btn"        onclick="showTab('rapports')">⏱ Rapports d'Heures</button>
+    <button id="tab-btn-alertes"   class="tab-btn"        onclick="showTab('alertes')">🚨 Alertes <span id="badge-alrt-count" style="display:none;margin-left:4px;background:#ef5350;color:#fff;padding:1px 7px;border-radius:10px;font-size:11px"></span></button>
   </div>
 
   <!-- ─── Tab Pointages ────────────────────────────────────────────────────── -->
@@ -466,6 +506,79 @@
       </p>
     </div>
   </div><!-- /panel-rapports -->
+
+  <!-- ─── Tab Alertes ──────────────────────────────────────────────────── -->
+  <div id="panel-alertes" style="display:none">
+    <div class="panel">
+      <p class="panel-title">&#128680; Alertes — Retards &amp; Heures Supplémentaires</p>
+
+      <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center">
+        <small style="color:#888">Retard : arrivée après <strong>09h00</strong> &nbsp;|&nbsp; H.Sup : sortie après <strong>18h30</strong></small>
+        <button class="btn grey" style="margin-left:auto" onclick="loadAlertes()">&#8635; Actualiser</button>
+      </div>
+
+      <!-- Cartes résumé -->
+      <div class="alert-stats">
+        <div class="alert-stat-card red">
+          <div class="alert-stat-val red" id="alrt-nb-retards">—</div>
+          <div class="alert-stat-lbl">Retards total</div>
+        </div>
+        <div class="alert-stat-card orange">
+          <div class="alert-stat-val orange" id="alrt-nb-hs">—</div>
+          <div class="alert-stat-lbl">H.Sup total</div>
+        </div>
+        <div class="alert-stat-card blue">
+          <div class="alert-stat-val blue" id="alrt-agents-concernes">—</div>
+          <div class="alert-stat-lbl">Agents concernés</div>
+        </div>
+      </div>
+
+      <!-- Retards -->
+      <div class="alerte-section-title retard">
+        <span>&#9888; Retards</span>
+        <span id="badge-retards" class="bdg-retard" style="display:none"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Agent</th><th>Date</th><th>Heure arrivée</th><th>Retard</th>
+          </tr></thead>
+          <tbody id="tbody-retards"></tbody>
+        </table>
+        <p id="empty-retards" class="empty" style="display:none">Aucun retard détecté. &#10004;</p>
+      </div>
+
+      <!-- Heures supplémentaires -->
+      <div class="alerte-section-title hs" style="margin-top:30px">
+        <span>&#8987; Heures Supplémentaires</span>
+        <span id="badge-hs" class="bdg-hs" style="display:none"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Agent</th><th>Date</th><th>Heure sortie</th><th>H.Sup</th>
+          </tr></thead>
+          <tbody id="tbody-hs"></tbody>
+        </table>
+        <p id="empty-hs" class="empty" style="display:none">Aucune heure supplémentaire détectée. &#10004;</p>
+      </div>
+
+      <!-- Cumul mensuel H.Sup par agent -->
+      <div class="alerte-section-title cumul" style="margin-top:30px">
+        <span>&#128197; Cumul mensuel des H.Sup par agent</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Agent</th><th>Mois</th><th>Total H.Sup</th>
+          </tr></thead>
+          <tbody id="tbody-cumul"></tbody>
+        </table>
+        <p id="empty-cumul" class="empty" style="display:none">Aucune heure supplémentaire cumulée.</p>
+      </div>
+
+    </div>
+  </div><!-- /panel-alertes -->
 
 </div><!-- /container -->
 
@@ -676,9 +789,12 @@
   function showTab(name) {
     document.getElementById('panel-pointages').style.display = name === 'pointages' ? '' : 'none';
     document.getElementById('panel-rapports').style.display  = name === 'rapports'  ? '' : 'none';
+    document.getElementById('panel-alertes').style.display   = name === 'alertes'   ? '' : 'none';
     document.getElementById('tab-btn-pointages').classList.toggle('active', name === 'pointages');
     document.getElementById('tab-btn-rapports').classList.toggle('active',  name === 'rapports');
+    document.getElementById('tab-btn-alertes').classList.toggle('active',   name === 'alertes');
     if (name === 'rapports' && !rapportDataCache) loadRapportData();
+    if (name === 'alertes') loadAlertes();
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -924,6 +1040,110 @@
     window.location.href =
       `/export/rapport/pdf?debut=${encodeURIComponent(rapportDebutFR)}&fin=${encodeURIComponent(rapportFinFR)}&titre=${titre}`;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  ALERTES
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  function fmtMinAlerte(min) {
+    if (!min && min !== 0) return '—';
+    return `${Math.floor(min / 60)}h${String(Math.round(min % 60)).padStart(2, '0')}`;
+  }
+
+  async function loadAlertes() {
+    try {
+      const res  = await fetch('/alertes');
+      const data = await res.json();
+      renderAlertes(data);
+    } catch {
+      console.error('Impossible de charger les alertes.');
+    }
+  }
+
+  function renderAlertes({ retards, hsSup, cumulHS }) {
+    // — Stats cartes
+    document.getElementById('alrt-nb-retards').textContent      = retards.length;
+    document.getElementById('alrt-nb-hs').textContent            = hsSup.length;
+    const agentsConcernes = new Set([
+      ...retards.map(r => r.nom_agent.toLowerCase()),
+      ...hsSup.map(r => r.nom_agent.toLowerCase())
+    ]);
+    document.getElementById('alrt-agents-concernes').textContent = agentsConcernes.size;
+
+    // Badge onglet
+    const total = retards.length + hsSup.length;
+    const badgeOnglet = document.getElementById('badge-alrt-count');
+    if (total > 0) {
+      badgeOnglet.textContent   = total;
+      badgeOnglet.style.display = '';
+    } else {
+      badgeOnglet.style.display = 'none';
+    }
+
+    // — Tableau Retards
+    const tbR = document.getElementById('tbody-retards');
+    const emR = document.getElementById('empty-retards');
+    const bdR = document.getElementById('badge-retards');
+    if (retards.length === 0) {
+      tbR.innerHTML = ''; emR.style.display = 'block'; bdR.style.display = 'none';
+    } else {
+      emR.style.display = 'none';
+      bdR.textContent   = retards.length; bdR.style.display = '';
+      tbR.innerHTML = retards.map((r, i) => {
+        const bg = i % 2 === 0 ? '#fff5f5' : '#fff';
+        return `<tr style="background:${bg}">
+          <td><strong>${escHtml(r.nom_agent)}</strong></td>
+          <td>${escHtml(r.date)}</td>
+          <td>${escHtml(r.heure)}</td>
+          <td><span class="bdg-retard">⁠⚠️ +${fmtMinAlerte(r.retard_min)} de retard</span></td>
+        </tr>`;
+      }).join('');
+    }
+
+    // — Tableau Heures Supplémentaires
+    const tbH = document.getElementById('tbody-hs');
+    const emH = document.getElementById('empty-hs');
+    const bdH = document.getElementById('badge-hs');
+    if (hsSup.length === 0) {
+      tbH.innerHTML = ''; emH.style.display = 'block'; bdH.style.display = 'none';
+    } else {
+      emH.style.display = 'none';
+      bdH.textContent   = hsSup.length; bdH.style.display = '';
+      tbH.innerHTML = hsSup.map((r, i) => {
+        const bg = i % 2 === 0 ? '#fffde7' : '#fff';
+        return `<tr style="background:${bg}">
+          <td><strong>${escHtml(r.nom_agent)}</strong></td>
+          <td>${escHtml(r.date)}</td>
+          <td>${escHtml(r.heure)}</td>
+          <td><span class="bdg-hs">⁠⌛ +${fmtMinAlerte(r.hs_min)} H.Sup</span></td>
+        </tr>`;
+      }).join('');
+    }
+
+    // — Cumul mensuel HS
+    const tbC = document.getElementById('tbody-cumul');
+    const emC = document.getElementById('empty-cumul');
+    if (cumulHS.length === 0) {
+      tbC.innerHTML = ''; emC.style.display = 'block';
+    } else {
+      emC.style.display = 'none';
+      const rows = [];
+      cumulHS.forEach(agent => {
+        agent.mois.forEach((m, mi) => {
+          const bg = mi % 2 === 0 ? '#e3f2fd22' : '#fff';
+          rows.push(`<tr style="background:${bg}">
+            ${mi === 0 ? `<td rowspan="${agent.mois.length}" style="font-weight:700;vertical-align:middle">${escHtml(agent.nom_agent)}</td>` : ''}
+            <td>${escHtml(m.mois)}</td>
+            <td><span class="bdg-info">⌛ ${fmtMinAlerte(m.minutes)}</span></td>
+          </tr>`);
+        });
+      });
+      tbC.innerHTML = rows.join('');
+    }
+  }
+
+  // Chargement initial des alertes (badge onglet)
+  loadAlertes();
 </script>
 </body>
 </html>
