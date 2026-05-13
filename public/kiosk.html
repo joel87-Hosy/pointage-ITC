@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pointage — Kiosque</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #0d47a1;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      color: #fff;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .screen {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      padding: 32px;
+    }
+
+    /* ─── En-tête ─────────────────────────────────────────────────── */
+    .title {
+      font-size: clamp(22px, 4vw, 42px);
+      font-weight: 800;
+      text-align: center;
+      letter-spacing: .5px;
+    }
+
+    .subtitle {
+      font-size: clamp(14px, 2vw, 22px);
+      opacity: .8;
+      text-align: center;
+    }
+
+    /* ─── Cadre QR ────────────────────────────────────────────────── */
+    .qr-card {
+      background: #fff;
+      border-radius: 24px;
+      padding: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+      box-shadow: 0 32px 100px rgba(0,0,0,.4);
+    }
+
+    #qr-img {
+      display: block;
+      width: clamp(200px, 35vmin, 420px);
+      height: clamp(200px, 35vmin, 420px);
+      border-radius: 12px;
+      /* pas de transition : remplacement instantané sans clignotement */
+    }
+
+    /* ─── Barre de décompte ───────────────────────────────────────── */
+    .countdown-area {
+      width: 100%;
+      text-align: center;
+    }
+
+    .countdown-label {
+      font-size: 13px;
+      color: #555;
+      margin-bottom: 7px;
+    }
+
+    .bar-wrap {
+      background: #e8eaf6;
+      border-radius: 99px;
+      height: 8px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: #0d47a1;
+      transition: width 1s linear, background .3s;
+      border-radius: 99px;
+    }
+
+    .bar-fill.warning { background: #e53935; }
+
+    .secs {
+      font-size: 12px;
+      color: #888;
+      margin-top: 5px;
+    }
+
+    /* ─── Instruction ─────────────────────────────────────────────── */
+    .instruction {
+      font-size: clamp(14px, 2.2vw, 24px);
+      font-weight: 600;
+      text-align: center;
+      opacity: .9;
+    }
+
+    /* ─── Heure en temps réel ─────────────────────────────────────── */
+    .clock {
+      font-size: clamp(28px, 6vw, 72px);
+      font-weight: 700;
+      letter-spacing: 3px;
+      opacity: .95;
+    }
+
+    .date-str {
+      font-size: clamp(13px, 2vw, 22px);
+      opacity: .7;
+      text-align: center;
+      margin-top: -16px;
+    }
+
+    /* ─── Badge mode ──────────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      background: rgba(255,255,255,.15);
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 99px;
+      padding: 5px 16px;
+      font-size: 12px;
+      letter-spacing: .5px;
+    }
+
+    /* ─── Impression (page d'affiche) ────────────────────────────── */
+    #print-section { display: none; }
+
+    @media print {
+      body { background: #fff; color: #000; }
+      .screen { display: none; }
+      #print-section {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        gap: 20px;
+        text-align: center;
+      }
+      #print-section h2 { font-size: 28px; color: #0d47a1; }
+      #print-section p  { font-size: 14px; color: #444; }
+      #static-qr-img    { width: 320px; height: 320px; border-radius: 12px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ─── Affichage kiosque (écran) ──────────────────────────────────────── -->
+<div class="screen" id="screen">
+  <div class="title">&#128203; Pointage des Agents</div>
+
+  <div class="clock" id="clock">--:--:--</div>
+  <div class="date-str" id="date-str"></div>
+
+  <div class="qr-card">
+    <img id="qr-img" src="" alt="QR Code de pointage">
+
+    <div class="countdown-area">
+      <div class="countdown-label">Code valide encore</div>
+      <div class="bar-wrap">
+        <div class="bar-fill" id="bar" style="width:100%"></div>
+      </div>
+      <div class="secs" id="secs-label">…</div>
+    </div>
+  </div>
+
+  <div class="instruction">
+    &#128247; Scannez ce code avec votre téléphone pour pointer votre présence
+  </div>
+
+  <span class="badge">&#128274; QR sécurisé — se renouvelle automatiquement</span>
+</div>
+
+<!-- ─── Section impression affiche statique ───────────────────────────── -->
+<div id="print-section">
+  <h2>&#128203; Pointage des Agents</h2>
+  <img id="static-qr-img" src="" alt="QR Code">
+  <p>Scannez ce code avec votre téléphone pour pointer votre présence.</p>
+  <p style="color:#888;font-size:12px">Votre position GPS sera vérifiée automatiquement.</p>
+</div>
+
+<script>
+  'use strict';
+
+  let countdownTimer = null;
+  let refreshTimer   = null;
+
+  // ─── Horloge temps réel ───────────────────────────────────────────────────
+  function updateClock() {
+    const now = new Date();
+    document.getElementById('clock').textContent =
+      now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    document.getElementById('date-str').textContent =
+      now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  }
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // ─── Chargement QR dynamique (avec token) ────────────────────────────────
+
+  let pendingData = null; // QR préchargé en attente d'affichage
+
+  async function fetchNextQR() {
+    try {
+      const res  = await fetch('/qrcode');
+      pendingData = await res.json();
+    } catch {
+      pendingData = null;
+    }
+  }
+
+  async function loadQR() {
+    clearInterval(countdownTimer);
+    clearTimeout(refreshTimer);
+
+    // Utilise le QR déjà préchargé si disponible, sinon va le chercher
+    const data = pendingData || await (async () => {
+      try {
+        const res = await fetch('/qrcode');
+        return await res.json();
+      } catch { return null; }
+    })();
+    pendingData = null;
+
+    if (!data) {
+      // Retry dans 3 s sans toucher au QR affiché
+      refreshTimer = setTimeout(loadQR, 3000);
+      return;
+    }
+
+    // Remplacement instantané sans effet de fondu
+    document.getElementById('qr-img').src = data.qrcode;
+
+    startCountdown(data.expires_in_ms);
+  }
+
+  function startCountdown(expiresInMs) {
+    const bar      = document.getElementById('bar');
+    const label    = document.getElementById('secs-label');
+    const total    = expiresInMs;
+    const deadline = Date.now() + expiresInMs;
+    let prefetched = false;
+
+    function tick() {
+      const remaining = deadline - Date.now();
+      const secs = Math.max(0, Math.ceil(remaining / 1000));
+      const pct  = Math.max(0, (remaining / total) * 100);
+
+      bar.style.width = pct + '%';
+      bar.classList.toggle('warning', secs <= 8);
+      label.textContent = secs + ' seconde' + (secs !== 1 ? 's' : '');
+
+      // Dès 5 s restantes : précharger le prochain QR en arrière-plan
+      if (secs <= 5 && !prefetched) {
+        prefetched = true;
+        fetchNextQR();
+      }
+
+      if (remaining <= 0) {
+        clearInterval(countdownTimer);
+        loadQR();
+      }
+    }
+    tick();
+    countdownTimer = setInterval(tick, 500); // 500ms pour plus de fluidité
+  }
+
+  // ─── Chargement QR statique (pour l'impression) ───────────────────────────
+  async function loadStaticQR() {
+    try {
+      const res  = await fetch('/qrcode-static');
+      const data = await res.json();
+      document.getElementById('static-qr-img').src = data.qrcode;
+    } catch { /* silencieux */ }
+  }
+
+  // ─── Initialisation ───────────────────────────────────────────────────────
+  loadQR();
+  loadStaticQR(); // prépare le QR d'impression en arrière-plan
+</script>
+</body>
+</html>

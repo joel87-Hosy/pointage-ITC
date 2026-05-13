@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — Pointage</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: #f0f4f8;
+      color: #333;
+    }
+
+    /* ─── En-tête ───────────────────────────────────────────────────────────── */
+    header {
+      background: #0d47a1;
+      color: #fff;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,.25);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    header span { font-size: 26px; }
+    header h1 { font-size: 19px; font-weight: 700; }
+
+    /* ─── Mise en page principale ───────────────────────────────────────────── */
+    .container { max-width: 1160px; margin: 0 auto; padding: 32px 20px; }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 310px 1fr;
+      gap: 26px;
+      align-items: start;
+    }
+
+    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+
+    .panel {
+      background: #fff;
+      border-radius: 14px;
+      padding: 26px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.08);
+    }
+
+    .panel-title {
+      font-size: 11px;
+      font-weight: 800;
+      color: #0d47a1;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      margin-bottom: 20px;
+    }
+
+    /* ─── Panneau QR Code ────────────────────────────────────────────────────── */
+    #qr-img {
+      display: block;
+      margin: 0 auto 14px;
+      max-width: 230px;
+      width: 100%;
+      border-radius: 10px;
+      border: 3px solid #e8eaf6;
+    }
+
+    #qr-url {
+      font-size: 11.5px;
+      color: #555;
+      word-break: break-all;
+      text-align: center;
+      background: #f5f7fb;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin-bottom: 14px;
+    }
+
+    #print-btn {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      background: #0d47a1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    #print-btn:hover { background: #1565c0; }
+
+    /* ─── Countdown barre ────────────────────────────────────────────────── */
+    .qr-footer {
+      margin-top: 14px;
+      font-size: 12px;
+      color: #666;
+      text-align: center;
+    }
+
+    .countdown-wrap {
+      background: #e8eaf6;
+      border-radius: 99px;
+      height: 6px;
+      overflow: hidden;
+      margin: 8px 0 4px;
+    }
+
+    .countdown-bar {
+      height: 100%;
+      background: #0d47a1;
+      transition: width 1s linear;
+      border-radius: 99px;
+    }
+
+    .countdown-bar.warning { background: #e53935; }
+
+    /* ─── Panneau enregistrements ────────────────────────────────────────────── */
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 18px;
+    }
+
+    .toolbar label { font-size: 13px; font-weight: 600; color: #555; }
+
+    .toolbar input[type="date"] {
+      padding: 7px 12px;
+      border: 1.5px solid #d0d7e3;
+      border-radius: 7px;
+      font-size: 13px;
+      outline: none;
+      cursor: pointer;
+    }
+
+    .toolbar input[type="date"]:focus { border-color: #0d47a1; }
+
+    .toolbar .btn {
+      padding: 7px 14px;
+      background: #0d47a1;
+      color: #fff;
+      border: none;
+      border-radius: 7px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .toolbar .btn:hover { opacity: .85; }
+    .toolbar .btn.grey  { background: #546e7a; }
+
+    .badge {
+      margin-left: auto;
+      background: #e8eaf6;
+      color: #3949ab;
+      padding: 4px 11px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .table-wrap { overflow-x: auto; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 400px; }
+
+    thead tr { background: #e8eaf6; }
+
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      color: #3949ab;
+      font-weight: 800;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    td {
+      padding: 11px 14px;
+      border-bottom: 1px solid #f0f0f0;
+      color: #444;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: #f5f7ff; }
+
+    .empty {
+      text-align: center;
+      color: #aaa;
+      padding: 48px 20px;
+      font-size: 14px;
+    }
+
+    /* ─── Impression ─────────────────────────────────────────────────────────── */
+    @media print {
+      body * { visibility: hidden; }
+      #print-area, #print-area * { visibility: visible; }
+      #print-area {
+        position: fixed;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <span>📋</span>
+  <h1>Tableau de Bord — Pointage des Agents</h1>
+</header>
+
+<div class="container">
+  <div class="grid">
+
+    <!-- ─── Panneau QR Code ─────────────────────────────────────────────────── -->
+    <div class="panel">
+      <p class="panel-title">&#128241; QR Code de Pointage</p>
+      <div id="print-area">
+        <img id="qr-img" src="" alt="Chargement du QR code…">
+      </div>
+      <p id="qr-url">Chargement de l'URL…</p>
+
+      <!-- Barre de countdown -->
+      <div class="qr-footer">
+        <span id="countdown-label">Renouvellement dans : <strong id="countdown-sec">…</strong></span>
+        <div class="countdown-wrap">
+          <div id="countdown-bar" class="countdown-bar" style="width:100%"></div>
+        </div>
+        <small style="color:#999">Le QR change toutes les 30 s — lien partagé = inutile</small>
+      </div>
+
+      <button id="print-btn" onclick="window.open('/kiosk','_blank')">&#128250; Ouvrir le kiosque (écran d'entrée)</button>
+      <button id="print-btn" onclick="printStaticQR()" style="margin-top:8px;background:#1b5e20">&#128424; Imprimer l'affiche (QR statique)</button>
+    </div>
+
+    <!-- ─── Panneau Enregistrements ─────────────────────────────────────────── -->
+    <div class="panel">
+      <p class="panel-title">📊 Registre des Pointages</p>
+
+      <div class="toolbar">
+        <label for="filter-date">Date :</label>
+        <input type="date" id="filter-date">
+        <button class="btn" onclick="applyFilter()">Filtrer</button>
+        <button class="btn grey" onclick="clearFilter()">Tous</button>
+        <button class="btn grey" onclick="exportCSV()">⬇ Export CSV</button>
+        <button class="btn grey" onclick="exportExcel()">⬇ Export Excel</button>
+        <button class="btn grey" onclick="exportPDF()">⬇ Export PDF</button>
+        <button class="btn" style="background:#c0392b;margin-left:auto" onclick="resetList()">🗑 Réinitialiser</button>
+        <span class="badge" id="count">—</span>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Nom de l'Agent</th>
+              <th>Date</th>
+              <th>Heure</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+        <p id="empty" class="empty" style="display:none">Aucun pointage trouvé.</p>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  'use strict';
+
+  let currentRecords = [];
+  let activeFilter   = null; // filtre de date actif (YYYY-MM-DD ou null)
+
+  let countdownTimer = null; // intervalle du compte à rebours
+  let refreshTimer   = null; // timeout de rechargement du QR
+
+  // ─── Charger le QR Code + lancer le compte à rebours ─────────────────────
+  async function loadQR() {
+    clearInterval(countdownTimer);
+    clearTimeout(refreshTimer);
+    try {
+      const res  = await fetch('/qrcode');
+      const data = await res.json();
+      document.getElementById('qr-img').src         = data.qrcode;
+      document.getElementById('qr-url').textContent = data.url;
+      startCountdown(data.expires_in_ms);
+    } catch {
+      document.getElementById('qr-url').textContent = 'Erreur lors du chargement du QR code.';
+      refreshTimer = setTimeout(loadQR, 5_000);
+    }
+  }
+
+  /**
+   * Lance un compte à rebours visuel et recharge le QR quand il expire.
+   * @param {number} expiresInMs - millisecondes avant l'expiration
+   */
+  function startCountdown(expiresInMs) {
+    const bar      = document.getElementById('countdown-bar');
+    const label    = document.getElementById('countdown-sec');
+    const total    = expiresInMs;
+    const deadline = Date.now() + expiresInMs;
+
+    function tick() {
+      const remaining = deadline - Date.now();
+      const secs = Math.max(0, Math.ceil(remaining / 1000));
+      const pct  = Math.max(0, (remaining / total) * 100);
+
+      label.textContent = secs + ' s';
+      bar.style.width   = pct + '%';
+      bar.classList.toggle('warning', secs <= 8);
+
+      if (remaining <= 0) {
+        clearInterval(countdownTimer);
+        loadQR();
+      }
+    }
+
+    tick();
+    countdownTimer = setInterval(tick, 500);
+  }
+
+  // ─── Charger les pointages ─────────────────────────────────────────────────
+  async function loadRecords(dateFilter) {
+    let url = '/records';
+    if (dateFilter) {
+      // Convertit YYYY-MM-DD → DD/MM/YYYY (format stocké en base)
+      const [y, m, d] = dateFilter.split('-');
+      url += `?date=${d}/${m}/${y}`;
+    }
+    try {
+      const res  = await fetch(url);
+      currentRecords = await res.json();
+      renderTable(currentRecords);
+    } catch {
+      console.error('Erreur lors du chargement des pointages.');
+    }
+  }
+
+  function applyFilter() {
+    const val = document.getElementById('filter-date').value;
+    activeFilter = val || null;
+    loadRecords(activeFilter || undefined);
+  }
+
+  function clearFilter() {
+    activeFilter = null;
+    document.getElementById('filter-date').value = '';
+    loadRecords();
+  }
+
+  // ─── Afficher le tableau ───────────────────────────────────────────────────
+  function renderTable(rows) {
+    const tbody = document.getElementById('tbody');
+    const empty = document.getElementById('empty');
+    const count = document.getElementById('count');
+
+    count.textContent = rows.length + ' enregistrement' + (rows.length !== 1 ? 's' : '');
+
+    if (rows.length === 0) {
+      tbody.innerHTML    = '';
+      empty.style.display = 'block';
+      return;
+    }
+
+    empty.style.display = 'none';
+    tbody.innerHTML = rows.map((r) =>
+      `<tr>
+        <td>${r.id}</td>
+        <td><strong>${escHtml(r.nom_agent)}</strong></td>
+        <td>${escHtml(r.date)}</td>
+        <td>${escHtml(r.heure)}</td>
+      </tr>`
+    ).join('');
+  }
+
+  // ─── Export CSV ────────────────────────────────────────────────────────────
+  function exportCSV() {
+    if (!currentRecords.length) return;
+
+    const header = ['Nom Complet', 'Date du jour', "Heure d'arrivée"];
+    const rows   = currentRecords.map(r => [r.nom_agent, r.date, r.heure]);
+    const csv    = [header, ...rows]
+      .map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\r\n');
+
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a    = document.createElement('a');
+    a.href     = URL.createObjectURL(blob);
+    a.download = `pointages_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  // ─── Export PDF (serveur) ─────────────────────────────────────────────────────────
+  function exportPDF() {
+    if (!currentRecords.length) return;
+    const params = activeFilter ? `?date=${encodeURIComponent(activeFilter)}` : '';
+    window.location.href = `/export/pdf${params}`;
+  }
+
+  // ─── Export Excel (serveur) ───────────────────────────────────────────────────────
+  function exportExcel() {
+    if (!currentRecords.length) return;
+    const params = activeFilter ? `?date=${encodeURIComponent(activeFilter)}` : '';
+    window.location.href = `/export/excel${params}`;
+  }
+
+  // ─── Réinitialiser ─────────────────────────────────────────────────────────
+  async function resetList() {
+    if (!confirm('Supprimer tous les pointages ? Cette action est irréversible.')) return;
+    const res = await fetch('/reset', { method: 'DELETE' });
+    if (res.ok) { currentRecords = []; renderTable([]); document.getElementById('count').textContent = '0 pointage(s)'; }
+    else alert('Erreur lors de la réinitialisation.');
+  }
+
+  // ─── Sécurité XSS ──────────────────────────────────────────────────────────
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ─── Initialisation ────────────────────────────────────────────────────────
+  loadQR();      // charge QR + lance countdown (auto-recharge intégré)
+  loadRecords(); // charge le registre
+  setInterval(() => loadRecords(activeFilter || undefined), 15_000); // rafraîchissement registre toutes les 15 s
+
+  // ─── Impression de l'affiche statique ─────────────────────────────────────
+  async function printStaticQR() {
+    try {
+      const res  = await fetch('/qrcode-static');
+      const data = await res.json();
+      const win  = window.open('', '_blank');
+      win.document.write(`<!DOCTYPE html><html lang="fr"><head>
+        <meta charset="UTF-8"><title>Affiche de Pointage</title>
+        <style>
+          body { font-family:'Segoe UI',sans-serif; text-align:center; padding:60px 40px; background:#fff; }
+          h1   { color:#0d47a1; font-size:32px; margin-bottom:8px; }
+          p    { color:#555; font-size:16px; margin-bottom:24px; }
+          img  { width:320px; height:320px; border-radius:12px; border:4px solid #1b5e20; }
+          .note{ margin-top:20px; font-size:13px; color:#888; }
+        </style>
+      </head><body>
+        <h1>&#128203; Pointage des Agents</h1>
+        <p>Scannez ce code avec votre téléphone pour enregistrer votre présence.</p>
+        <img src="${data.qrcode}" alt="QR Code pointage">
+        <p class="note">&#128204; Vous devez être dans les locaux pour pointer.<br>Votre position GPS sera vérifiée automatiquement.</p>
+        <script>window.onload=()=>window.print();<\/script>
+      </body></html>`);
+      win.document.close();
+    } catch {
+      alert('Impossible de charger le QR statique.');
+    }
+  }
+</script>
+</body>
+</html>

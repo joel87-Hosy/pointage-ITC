@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pointage Agent</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: linear-gradient(150deg, #0d47a1 0%, #1565c0 55%, #1976d2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 44px 36px 36px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .35);
+      text-align: center;
+    }
+
+    .icon { font-size: 56px; margin-bottom: 14px; }
+
+    h1 {
+      color: #0d47a1;
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: #888;
+      font-size: 13px;
+      margin-bottom: 32px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #444;
+      text-align: left;
+      margin-bottom: 7px;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 13px 16px;
+      font-size: 15px;
+      border: 2px solid #e3e8f0;
+      border-radius: 10px;
+      outline: none;
+      transition: border-color .2s;
+      margin-bottom: 20px;
+    }
+
+    input[type="text"]:focus { border-color: #0d47a1; }
+
+    button[type="submit"] {
+      width: 100%;
+      padding: 14px;
+      background: #0d47a1;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 700;
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+      letter-spacing: .3px;
+    }
+
+    button[type="submit"]:hover:not(:disabled) {
+      background: #1565c0;
+      transform: translateY(-1px);
+    }
+
+    button[type="submit"]:disabled {
+      background: #b0bec5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .alert {
+      display: none;
+      margin-top: 22px;
+      padding: 14px 16px;
+      border-radius: 10px;
+      font-size: 13.5px;
+      line-height: 1.7;
+      text-align: left;
+    }
+
+    .alert.success {
+      background: #e8f5e9;
+      color: #1b5e20;
+      border: 1px solid #a5d6a7;
+    }
+
+    .alert.error {
+      background: #ffebee;
+      color: #b71c1c;
+      border: 1px solid #ef9a9a;
+    }
+
+    /* ── État GPS ── */
+    .geo-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: #e3f2fd;
+      border: 1px solid #90caf9;
+      border-radius: 10px;
+      padding: 11px 14px;
+      font-size: 13px;
+      color: #0d47a1;
+      margin-bottom: 20px;
+    }
+
+    .geo-status.ok  { background: #e8f5e9; border-color: #a5d6a7; color: #1b5e20; }
+    .geo-status.err { background: #ffebee; border-color: #ef9a9a; color: #b71c1c; }
+
+    /* spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon">&#128203;</div>
+    <h1>Pointage des Agents</h1>
+    <p class="subtitle">Entrez votre nom complet pour enregistrer votre présence</p>
+
+    <!-- Statut GPS -->
+    <div id="geo-box" class="geo-status">
+      <div class="spinner"></div>
+      <span>Localisation GPS en cours…</span>
+    </div>
+
+    <form id="form" autocomplete="off" novalidate style="display:none">
+      <label for="nom">Nom Complet</label>
+      <input
+        id="nom"
+        type="text"
+        placeholder="Ex : Mohamed Amine Benali"
+        maxlength="100"
+        required
+      >
+      <button id="btn" type="submit">Valider le Pointage ✓</button>
+    </form>
+
+    <div id="alert" class="alert" role="alert" aria-live="polite"></div>
+  </div>
+
+  <script>
+    'use strict';
+
+    // ─── Récupération du token dans l'URL ────────────────────────────────────
+    const urlParams = new URLSearchParams(window.location.search);
+    const TOKEN = urlParams.get('token');
+
+    const form    = document.getElementById('form');
+    const btn     = document.getElementById('btn');
+    const alertEl = document.getElementById('alert');
+    const geoBox  = document.getElementById('geo-box');
+
+    let userLat = null;
+    let userLng = null;
+
+    function escHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function showFatalError(msg) {
+      geoBox.style.display  = 'none';
+      form.style.display    = 'none';
+      alertEl.className     = 'alert error';
+      alertEl.textContent   = '❌ ' + msg;
+      alertEl.style.display = 'block';
+    }
+
+    // ─── Device ID : identifiant unique par téléphone ─────────────────────────
+    function getDeviceId() {
+      let id = localStorage.getItem('pointage_device_id');
+      if (!id) {
+        id = (crypto.randomUUID ? crypto.randomUUID() :
+          Date.now().toString(36) + Math.random().toString(36).slice(2));
+        localStorage.setItem('pointage_device_id', id);
+      }
+      return id;
+    }
+    const DEVICE_ID = getDeviceId();
+
+    // Vérification locale : déjà pointé aujourd'hui depuis cet appareil ?
+    const todayKey = 'pointage_done_' + new Date().toLocaleDateString('fr-FR');
+    if (localStorage.getItem(todayKey)) {
+      showFatalError('Vous avez déjà pointé aujourd\'hui depuis cet appareil.');
+    }
+
+    // ─── Formulaire affiché directement, GPS tentée en arrière-plan ──────────
+    geoBox.style.display = 'none';
+    form.style.display   = localStorage.getItem(todayKey) ? 'none' : 'block';
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          userLat = pos.coords.latitude;
+          userLng = pos.coords.longitude;
+        },
+        () => { /* GPS non disponible — silencieux */ },
+        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      );
+    }
+
+    // ─── Soumission du formulaire ─────────────────────────────────────────────
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const nom = document.getElementById('nom').value.trim();
+      if (!nom) return;
+
+      btn.disabled          = true;
+      btn.textContent       = 'Enregistrement…';
+      alertEl.style.display = 'none';
+
+      try {
+        const res = await fetch('/pointer', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          // token + coordonnées → le timestamp est généré côté serveur uniquement
+          body: JSON.stringify({
+            nom_agent: nom,
+            token:     TOKEN,
+            lat:       userLat,
+            lng:       userLng,
+            device_id: DEVICE_ID
+          })
+        });
+
+        const data = await res.json();
+
+        if (res.ok) {
+          alertEl.className = 'alert success';
+          alertEl.innerHTML =
+            '<strong>✅ Pointage enregistré avec succès !</strong><br>' +
+            `Agent : <strong>${escHtml(data.nom_agent)}</strong><br>` +
+            `Date  : <strong>${data.date}</strong><br>` +
+            `Heure : <strong>${data.heure}</strong>`;
+          form.reset();
+          form.style.display = 'none'; // empêche un double pointage
+          localStorage.setItem(todayKey, '1'); // verrou local pour aujourd'hui
+        } else {
+          alertEl.className   = 'alert error';
+          alertEl.textContent = '❌ ' + (data.error || 'Une erreur est survenue.');
+        }
+      } catch {
+        alertEl.className   = 'alert error';
+        alertEl.textContent = '❌ Impossible de joindre le serveur. Vérifiez votre connexion.';
+      }
+
+      alertEl.style.display = 'block';
+      btn.disabled    = false;
+      btn.textContent = 'Valider le Pointage ✓';
+    });
+  </script>
+</body>
+</html>

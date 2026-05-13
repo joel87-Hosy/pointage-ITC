@@ -1,0 +1,17 @@
+{
+  "name": "pointage-qr",
+  "version": "1.0.0",
+  "description": "Système de pointage par QR code — timestamp généré côté serveur",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "express": "^4.19.2",
+    "pdfkit": "^0.18.0",
+    "pg": "^8.20.0",
+    "qrcode": "^1.5.4",
+    "selfsigned": "^5.5.0"
+  }
+}
