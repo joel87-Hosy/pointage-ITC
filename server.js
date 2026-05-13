@@ -1,6 +1,7 @@
 'use strict';
 
 const express     = require('express');
+const compression = require('compression');
 const QRCode      = require('qrcode');
 const crypto      = require('crypto');
 const path        = require('path');
@@ -134,8 +135,12 @@ function haversineDistance(lat1, lng1, lat2, lng2) {
 }
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
+app.use(compression());          // gzip — réduit la taille des réponses
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: '5m',                  // cache navigateur 5 min pour CSS/JS/images
+  etag:   true
+}));
 
 // ─── Utilitaires ─────────────────────────────────────────────────────────────
 
@@ -174,6 +179,7 @@ function getServerDateTime() {
 
 // Page de pointage (ouverte par le QR code)
 app.get('/pointage', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=300'); // 5 min — le token est dans l'URL, pas dans le HTML
   res.sendFile(path.join(__dirname, 'public', 'pointage.html'));
 });
 
@@ -240,31 +246,28 @@ app.post('/pointer', async (req, res) => {
   const did = typeof device_id === 'string' ? device_id.substring(0, 64) : null;
 
   try {
-    const id = await nextAutoId();
-    // Bloquer si même nom + même type aujourd'hui
-    const byName = await col
-      .where('nom_agent_lower', '==', nom.toLowerCase())
-      .where('date', '==', date)
-      .where('type', '==', pointageType)
-      .limit(1).get();
+    // ── Lancer les 3 vérifications en parallèle (gain ~2× sur la latence Firestore) ─
+    const deviceQuery = did
+      ? col.where('device_id', '==', did).where('date', '==', date).where('type', '==', pointageType).limit(1).get()
+      : Promise.resolve({ empty: true });
+
+    const [idSnap, byName, byDevice] = await Promise.all([
+      col.orderBy('id', 'desc').limit(1).get(),
+      col.where('nom_agent_lower', '==', nom.toLowerCase()).where('date', '==', date).where('type', '==', pointageType).limit(1).get(),
+      deviceQuery
+    ]);
+
+    const id = idSnap.empty ? 1 : idSnap.docs[0].data().id + 1;
+
     if (!byName.empty) {
       return res.status(409).json({
         error: `Vous avez déjà effectué un pointage ${typeLabel} aujourd'hui (${date}).`
       });
     }
-
-    // Bloquer si même appareil + même type aujourd'hui
-    if (did) {
-      const byDevice = await col
-        .where('device_id', '==', did)
-        .where('date', '==', date)
-        .where('type', '==', pointageType)
-        .limit(1).get();
-      if (!byDevice.empty) {
-        return res.status(409).json({
-          error: `Cet appareil a déjà été utilisé pour un pointage ${typeLabel} aujourd'hui (${date}).`
-        });
-      }
+    if (!byDevice.empty) {
+      return res.status(409).json({
+        error: `Cet appareil a déjà été utilisé pour un pointage ${typeLabel} aujourd'hui (${date}).`
+      });
     }
 
     const record = {
