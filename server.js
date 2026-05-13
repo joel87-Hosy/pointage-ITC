@@ -196,6 +196,7 @@ app.get('/kiosk', (_req, res) => {
 
 // Tableau de bord administrateur
 app.get('/admin', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store'); // toujours la dernière version
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
