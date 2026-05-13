@@ -212,15 +212,20 @@
     /* ─── Onglets ────────────────────────────────────────────────────────────── */
     .tab-bar {
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       margin-bottom: 22px;
+      padding: 12px;
+      background: #eef4ff;
+      border: 1px solid #c7dafc;
+      border-radius: 14px;
     }
 
     .tab-btn {
       padding: 10px 24px;
       font-size: 14px;
       font-weight: 700;
-      border: none;
+      border: 1px solid #d6e3f8;
       border-radius: 10px;
       cursor: pointer;
       background: #fff;
@@ -344,6 +349,7 @@
 <div class="container">
 
   <!-- ─── Onglets ─────────────────────────────────────────────────────────── -->
+  <p style="margin:-4px 0 10px;color:#4f6475;font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Navigation Admin</p>
   <div class="tab-bar">
     <button id="tab-btn-pointages" class="tab-btn active" onclick="showTab('pointages')">📋 Pointages</button>
     <button id="tab-btn-rapports"  class="tab-btn"        onclick="showTab('rapports')">⏱ Rapports d'Heures</button>

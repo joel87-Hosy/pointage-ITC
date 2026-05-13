@@ -13,6 +13,8 @@ const ExcelJS     = require('exceljs');
 const app  = express();
 const PORT = process.env.PORT || 3000;
 
+app.set('trust proxy', 1);
+
 // ─── Firebase / Firestore ─────────────────────────────────────────────────────
 
 if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
@@ -189,6 +191,14 @@ function getAppBaseURL() {
     return process.env.APP_URL.replace(/\/$/, '').replace(/^http:\/\//, 'https://');
   }
   return `http://${getLocalIP()}:${PORT}`;
+}
+
+/** Retourne l'URL de base depuis la requête courante. */
+function getRequestBaseURL(req) {
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  if (host) return `${proto}://${host}`;
+  return getAppBaseURL();
 }
 
 /**
@@ -378,13 +388,13 @@ app.delete('/reset', async (req, res) => {
  * GET /qrcode
  * QR dynamique avec token (pour page kiosque / écran).
  */
-app.get('/qrcode', async (_req, res) => {
+app.get('/qrcode', async (req, res) => {
   const token     = currentToken();
   const now       = Date.now();
   const slot      = getSlot(now);
   const expiresIn = (slot + 1) * TOKEN_TTL_MS - now;
 
-  const url = `${getAppBaseURL()}/pointage?token=${token}`;
+  const url = `${getRequestBaseURL(req)}/pointage?token=${token}`;
   try {
     const dataURL = await QRCode.toDataURL(url, {
       width: 320, margin: 2, errorCorrectionLevel: 'M',
@@ -401,8 +411,8 @@ app.get('/qrcode', async (_req, res) => {
  * QR statique sans token ni GPS (pour affiche imprimée).
  * Sécurité : présence physique requise pour voir l'affiche.
  */
-app.get('/qrcode-static', async (_req, res) => {
-  const url = `${getAppBaseURL()}/pointage`;
+app.get('/qrcode-static', async (req, res) => {
+  const url = `${getRequestBaseURL(req)}/pointage`;
   try {
     const dataURL = await QRCode.toDataURL(url, {
       width: 400, margin: 2, errorCorrectionLevel: 'M',
