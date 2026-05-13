@@ -35,6 +35,12 @@ admin.initializeApp({
 const db  = admin.firestore();
 const col = db.collection('pointages');
 
+// Préchauffage Firestore : établit la connexion dès le démarrage
+// pour que la 1ère requête d'un agent ne subisse pas le délai de connexion
+col.limit(1).get()
+  .then(() => console.log('  Firestore connecté ✓'))
+  .catch(e => console.error('  Firestore connexion échouée :', e.message));
+
 // Helper : retourne les enregistrements triés, filtrés par date optionnelle
 async function fetchRecords(date) {
   let query = col.orderBy('id', 'desc').limit(1000);
