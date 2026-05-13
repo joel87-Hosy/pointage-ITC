@@ -14,9 +14,15 @@ const PORT = process.env.PORT || 3000;
 
 // ─── Base de données PostgreSQL ───────────────────────────────────────────────
 
+if (!process.env.DATABASE_URL) {
+  console.error('ERREUR : La variable DATABASE_URL est manquante.');
+  console.error('Sur Railway : liez un service PostgreSQL à votre application.');
+  process.exit(1);
+}
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
+  ssl: { rejectUnauthorized: false }
 });
 
 async function initDB() {
