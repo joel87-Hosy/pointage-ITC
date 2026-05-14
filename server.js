@@ -1,9 +1,12 @@
 'use strict';
 
+require('dotenv').config();
+
 const express     = require('express');
 const compression = require('compression');
 const QRCode      = require('qrcode');
 const crypto      = require('crypto');
+const fs          = require('fs');
 const path        = require('path');
 const os          = require('os');
 const admin       = require('firebase-admin');
@@ -15,16 +18,35 @@ const PORT = process.env.PORT || 3000;
 
 app.set('trust proxy', 1);
 
+// ─── Sécurité admin ─────────────────────────────────────────────────────────
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || null;
+
+if (!ADMIN_PASSWORD) {
+  console.warn('  [ADMIN] ADMIN_PASSWORD non défini : accès admin désactivé tant que ce mot de passe n\'est pas configuré.');
+}
+
 // ─── Firebase / Firestore ─────────────────────────────────────────────────────
 
-if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+let serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT || null;
+if (!serviceAccountRaw && process.env.FIREBASE_SERVICE_ACCOUNT_FILE) {
+  try {
+    serviceAccountRaw = fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_FILE, 'utf8');
+  } catch {
+    console.error('ERREUR : FIREBASE_SERVICE_ACCOUNT_FILE est défini, mais le fichier est introuvable ou illisible.');
+    process.exit(1);
+  }
+}
+
+if (!serviceAccountRaw) {
   console.error('ERREUR : La variable FIREBASE_SERVICE_ACCOUNT est manquante.');
+  console.error('Astuce locale : définissez FIREBASE_SERVICE_ACCOUNT_FILE=.\\firebase-service-account.json dans .env');
   process.exit(1);
 }
 
 let serviceAccount;
 try {
-  serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  serviceAccount = JSON.parse(serviceAccountRaw);
 } catch {
   console.error('ERREUR : FIREBASE_SERVICE_ACCOUNT n\'est pas un JSON valide.');
   process.exit(1);
@@ -125,6 +147,65 @@ function validateToken(token) {
   return false;
 }
 
+function safeCompare(a, b) {
+  const aBuf = Buffer.from(String(a), 'utf8');
+  const bBuf = Buffer.from(String(b), 'utf8');
+  if (aBuf.length !== bBuf.length) return false;
+  return crypto.timingSafeEqual(aBuf, bBuf);
+}
+
+function requestAdminAuth(res) {
+  res.setHeader('WWW-Authenticate', 'Basic realm="Admin Pointage", charset="UTF-8"');
+  return res.status(401).send('Authentification admin requise.');
+}
+
+function requireAdminAuth(req, res, next) {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).json({
+      error: 'Acces admin indisponible : ADMIN_PASSWORD non configure sur le serveur.'
+    });
+  }
+
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Basic ')) return requestAdminAuth(res);
+
+  let decoded;
+  try {
+    decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+  } catch {
+    return requestAdminAuth(res);
+  }
+
+  const sep = decoded.indexOf(':');
+  if (sep < 0) return requestAdminAuth(res);
+
+  const username = decoded.slice(0, sep);
+  const password = decoded.slice(sep + 1);
+
+  if (!safeCompare(username, ADMIN_USERNAME) || !safeCompare(password, ADMIN_PASSWORD)) {
+    return requestAdminAuth(res);
+  }
+
+  next();
+}
+
+function isAdminProtectedPath(pathname) {
+  return [
+    '/admin',
+    '/admin.html',
+    '/records',
+    '/reset',
+    '/qrcode',
+    '/qrcode-static',
+    '/export/pdf',
+    '/export/excel',
+    '/alertes',
+    '/rapports/heures',
+    '/export/rapport/pdf',
+    '/export/rapport/excel'
+  ].includes(pathname);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 //  GÉOLOCALISATION — formule de Haversine
 //  La distance est calculée côté serveur à partir des coordonnées envoyées
@@ -167,6 +248,10 @@ app.use((_req, res, next) => {
 });
 
 app.use(express.json());
+app.use((req, res, next) => {
+  if (isAdminProtectedPath(req.path)) return requireAdminAuth(req, res, next);
+  next();
+});
 app.use(express.static(path.join(__dirname, 'public'), {
   maxAge: '5m',                  // cache navigateur 5 min pour CSS/JS/images
   etag:   true
