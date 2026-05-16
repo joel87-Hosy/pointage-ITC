@@ -90,10 +90,11 @@ const GEO_REQUIRED = false;   // GPS optionnel — token rotatif 30s assure la s
 const TOKEN_TTL_MS = 30_000;  // durée de vie d'un token QR (millisecondes)
 
 // ─── Règles horaires ────────────────────────────────────────────────────────
-const HEURE_DEBUT_MIN  =  8 * 60;       // 08:00 — heure de prise de poste
-const HEURE_FIN_MIN    = 17 * 60 + 30;  // 17:30 — heure de fin normale
-const SEUIL_RETARD_MIN =  9 * 60;       // 09:00 — alerte retard si arrivée > 09h00 (1h de grâce)
-const SEUIL_HS_MIN     = 18 * 60 + 30;  // 18:30 — alerte HS si sortie > 18h30 (1h après fin)
+const HEURE_DEBUT_MIN     =  8 * 60;       // 08:00 — heure de prise de poste
+const HEURE_FIN_MIN        = 17 * 60 + 30;  // 17:30 — heure de fin normale (Lun-Ven)
+const HEURE_FIN_SAMEDI_MIN = 12 * 60;       // 12:00 — heure de fin normale le samedi
+const SEUIL_RETARD_MIN     =  9 * 60;       // 09:00 — alerte retard si arrivée > 09h00 (1h de grâce)
+const HS_GRACE_MIN         = 60;            // délai supplémentaire après l'heure de fin normale
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  TOKENS ROTATIFS — anti-partage de lien
@@ -157,6 +158,22 @@ function safeCompare(a, b) {
 function requestAdminAuth(res) {
   res.setHeader('WWW-Authenticate', 'Basic realm="Admin Pointage", charset="UTF-8"');
   return res.status(401).send('Authentification admin requise.');
+}
+
+function getDayEndMinutes(dateFR) {
+  if (!dateFR) return HEURE_FIN_MIN;
+  const [d, m, y] = dateFR.split('/').map(Number);
+  const day = new Date(y, m - 1, d).getDay();
+  return day === 6 ? HEURE_FIN_SAMEDI_MIN : HEURE_FIN_MIN;
+}
+
+function getDayEndThresholdMinutes(dateFR) {
+  return getDayEndMinutes(dateFR) + HS_GRACE_MIN;
+}
+
+function formatDayEnd(dateFR) {
+  const endMin = getDayEndMinutes(dateFR);
+  return `${String(Math.floor(endMin / 60)).padStart(2, '0')}h${String(endMin % 60).padStart(2, '0')}`;
 }
 
 function requireAdminAuth(req, res, next) {
@@ -418,12 +435,12 @@ app.post('/pointer', async (req, res) => {
         minutes: retardMin,
         message: `⚠️ Retard de ${fmtMin(retardMin)} — Arrivée à ${heure} (début prévu : 08h00).`
       };
-    } else if (pointageType === 'sortie' && heureMin > SEUIL_HS_MIN) {
-      const hsMin = heureMin - HEURE_FIN_MIN;
+    } else if (pointageType === 'sortie' && heureMin > getDayEndThresholdMinutes(date)) {
+      const hsMin = heureMin - getDayEndMinutes(date);
       alerte = {
         type: 'heures_sup',
         minutes: hsMin,
-        message: `ℹ️ Heures supplémentaires : +${fmtMin(hsMin)} — Sortie à ${heure} (fin prévue : 17h30).`
+        message: `ℹ️ Heures supplémentaires : +${fmtMin(hsMin)} — Sortie à ${heure} (fin prévue : ${formatDayEnd(date)}).`
       };
     }
 
@@ -654,8 +671,8 @@ app.get('/alertes', async (req, res) => {
         }
       } else {
         // Heures supplémentaires
-        if (heureMin > SEUIL_HS_MIN) {
-          const hsMin = heureMin - HEURE_FIN_MIN;
+        if (heureMin > getDayEndThresholdMinutes(r.date)) {
+          const hsMin = heureMin - getDayEndMinutes(r.date);
           hsSup.push({
             nom_agent: r.nom_agent,
             date:      r.date,

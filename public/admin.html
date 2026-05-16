@@ -671,6 +671,11 @@
     loadRecords();
   }
 
+  function getTodayISO() {
+    const today = new Date();
+    return today.toISOString().slice(0, 10);
+  }
+
   // ─── Afficher le tableau ───────────────────────────────────────────────────
   function renderTable(rows) {
     const tbody = document.getElementById('tbody');
@@ -756,8 +761,10 @@
   }
 
   // ─── Initialisation ────────────────────────────────────────────────────────
+  activeFilter = getTodayISO();
+  document.getElementById('filter-date').value = activeFilter;
   loadQR();      // charge QR + lance countdown (auto-recharge intégré)
-  loadRecords(); // charge le registre
+  loadRecords(activeFilter);
   setInterval(() => loadRecords(activeFilter || undefined), 15_000); // rafraîchissement registre toutes les 15 s
 
   // ─── Impression de l'affiche statique ─────────────────────────────────────
