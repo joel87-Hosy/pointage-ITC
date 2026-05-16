@@ -67,10 +67,15 @@ col.limit(1).get()
 
 // Helper : retourne les enregistrements triés, filtrés par date optionnelle
 async function fetchRecords(date) {
-  let query = col.orderBy('id', 'desc').limit(1000);
-  if (date) query = col.where('date', '==', date).orderBy('id', 'desc');
-  const snap = await query.get();
-  return snap.docs.map(d => d.data());
+  if (!date) {
+    const snap = await col.orderBy('id', 'desc').limit(1000).get();
+    return snap.docs.map(d => d.data());
+  }
+
+  const snap = await col.where('date', '==', date).get();
+  return snap.docs
+    .map(d => d.data())
+    .sort((a, b) => (b.id || 0) - (a.id || 0));
 }
 
 // Helper : prochain ID auto-incrémenté
@@ -86,7 +91,7 @@ async function nextAutoId() {
 const OFFICE_LAT   =  5.4040; // ← latitude GPS de vos locaux (Angré, Abidjan)
 const OFFICE_LNG   = -3.9888; // ← longitude GPS de vos locaux (Angré, Abidjan)
 const MAX_RADIUS_M = 500;     // rayon maximum autorisé (mètres)
-const GEO_REQUIRED = false;   // GPS optionnel — token rotatif 30s assure la sécurité
+const GEO_REQUIRED = true;    // GPS OBLIGATOIRE pour prouver la présence physique (sécurité anti-fraude)
 const TOKEN_TTL_MS = 30_000;  // durée de vie d'un token QR (millisecondes)
 
 // ─── Règles horaires ────────────────────────────────────────────────────────
@@ -109,6 +114,11 @@ const HMAC_SECRET = crypto.randomBytes(32).toString('hex');
 
 // Token déjà consommés dans la fenêtre glissante (token → numéro de slot)
 const usedTokens = new Map();
+
+// Sessions de pointage actives (sessionId → {createdAt, expiresAt})
+// Durée de vie d'une session : 5 minutes après le scan du QR code
+const SESSION_TTL_MS = 5 * 60 * 1000;
+const activeSessions = new Map();
 
 function getSlot(tsMs) { return Math.floor(tsMs / TOKEN_TTL_MS); }
 
@@ -146,6 +156,81 @@ function validateToken(token) {
     }
   }
   return false;
+}
+
+/**
+ * Crée une session de pointage à partir d'un token valide.
+ * Retourne un sessionId unique valide pour 5 minutes.
+ */
+function createSession(token) {
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  const now = Date.now();
+  activeSessions.set(sessionId, {
+    createdAt: now,
+    expiresAt: now + SESSION_TTL_MS,
+    token: token // stocke le token pour éviter les sessions orphelines
+  });
+  return sessionId;
+}
+
+/**
+ * Valide et consomme une session de pointage.
+ * Une session ne peut être utilisée qu'une seule fois (anti-double-pointage).
+ */
+function validateAndConsumeSession(sessionId) {
+  if (typeof sessionId !== 'string' || !sessionId.match(/^[0-9a-f]{32}$/)) {
+    return false;
+  }
+
+  const session = activeSessions.get(sessionId);
+  if (!session) return false;
+
+  const now = Date.now();
+  
+  // Vérifier que la session n'a pas expiré
+  if (now > session.expiresAt) {
+    activeSessions.delete(sessionId);
+    return false;
+  }
+
+  // Consommer la session (la supprimer pour éviter la réutilisation)
+  activeSessions.delete(sessionId);
+  return true;
+}
+
+/**
+ * Nettoie automatiquement les sessions expirées (toutes les 30 secondes).
+ */
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  for (const [sessionId, session] of activeSessions) {
+    if (now > session.expiresAt) {
+      activeSessions.delete(sessionId);
+    }
+  }
+}
+
+// Lancer le nettoyage automatique toutes les 30 secondes
+setInterval(cleanupExpiredSessions, 30_000);
+
+/**
+ * Normalise un nom d'agent pour éviter les variations frauduleuses.
+ * - Minuscules
+ * - Accents supprimés
+ * - Espaces multiples réduits à 1
+ * - Caractères spéciaux supprimés
+ * Exemple: "Jean-Paul Müller  " → "jean paul muller"
+ */
+function normalizeName(name) {
+  if (!name) return '';
+  return name
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')                           // décomposer accents
+    .replace(/[\u0300-\u036f]/g, '')            // supprimer accents
+    .replace(/[^a-z0-9\s]/g, '')                // supprimer caractères spéciaux
+    .replace(/\s+/g, ' ')                       // espaces multiples → 1 seul
+    .trim();
 }
 
 function safeCompare(a, b) {
@@ -340,64 +425,108 @@ app.get('/admin', (_req, res) => {
 // ─── API ──────────────────────────────────────────────────────────────────────
 
 /**
+ * POST /init-session
+ * Valide un token QR et crée une session de pointage.
+ * Cette session doit être fournie au pointage pour empêcher les raccourcis.
+ */
+app.post('/init-session', (req, res) => {
+  const { token } = req.body || {};
+
+  if (!token) {
+    return res.status(400).json({
+      error: 'Token manquant. Veuillez scanner le QR code affiché à l\'écran.'
+    });
+  }
+
+  if (!validateToken(token)) {
+    return res.status(403).json({
+      error: 'QR code expiré ou invalide. Rescannez le code affiché à l\'écran.'
+    });
+  }
+
+  // Créer une session valide pour 5 minutes
+  const sessionId = createSession(token);
+
+  res.json({
+    success: true,
+    sessionId: sessionId,
+    expiresIn_ms: SESSION_TTL_MS
+  });
+});
+
+/**
  * POST /pointer
  * Enregistre la présence d'un agent.
  * La date et l'heure sont exclusivement générées par le serveur
  * → impossible pour l'agent de falsifier l'heure via son téléphone.
  */
 app.post('/pointer', async (req, res) => {
-  const { nom_agent: rawName, token, lat, lng, device_id, type } = req.body || {};
+  const { nom_agent: rawName, code_agent, session_id: sessionId, lat, lng, device_id, type, user_agent } = req.body || {};
+
+  // ── 0. Validation de la session (OBLIGATOIRE pour empêcher les raccourcis) ─
+  if (!sessionId) {
+    return res.status(403).json({
+      error: 'Session manquante. Vous devez scanner le QR code avant de pointer.'
+    });
+  }
+
+  if (!validateAndConsumeSession(sessionId)) {
+    return res.status(403).json({
+      error: 'Session expirée ou invalide. Rescannez le QR code et réessayez.'
+    });
+  }
 
   // ── 1. Validation du nom ──────────────────────────────────────────────────
   if (typeof rawName !== 'string' || rawName.trim().length === 0) {
     return res.status(400).json({ error: "Le nom de l'agent est requis." });
   }
 
-  // ── 1b. Type de pointage (arrivée ou sortie) ──────────────────────────────
+  // ── 1b. Code agent optionnel (authentification supplémentaire) ───────────────
+  // Si fourni, stocke le code; sinon marque comme 'non-authentifie'
+  const agentCode = (typeof code_agent === 'string') ? code_agent.substring(0, 20) : null;
+
+  // ── 1c. Type de pointage (arrivée ou sortie) ──────────────────────────────
   const pointageType = (type === 'sortie') ? 'sortie' : 'arrivee';
   const typeLabel    = pointageType === 'arrivee' ? "d'arrivée" : "de sortie";
 
-  // ── 2. Token rotatif → uniquement si fourni (mode écran dynamique) ────────────
-  //    Sans token = mode affiche imprimée → la géo seule bloque les absents
-  if (token && !validateToken(token)) {
+  // ── 2. GÉOLOCALISATION — OBLIGATOIRE ─────────────────────────────────────
+  const latitude  = parseFloat(lat);
+  const longitude = parseFloat(lng);
+  if (
+    isNaN(latitude) || isNaN(longitude) ||
+    latitude  < -90  || latitude  > 90  ||
+    longitude < -180 || longitude > 180
+  ) {
+    return res.status(400).json({ error: 'Coordonnées GPS manquantes ou invalides.' });
+  }
+  const dist = haversineDistance(OFFICE_LAT, OFFICE_LNG, latitude, longitude);
+  if (dist > MAX_RADIUS_M) {
     return res.status(403).json({
-      error: 'QR code expiré ou invalide. Rescannez le code affiché à l\'écran.'
+      error: `⚠️ FRAUDE DÉTECTÉE: Vous êtes à ${Math.round(dist)} m des locaux (max ${MAX_RADIUS_M} m). Vous devez être physiquement sur place pour pointer.`
     });
   }
 
-  // ── 3. Géolocalisation → uniquement si GEO_REQUIRED activé globalement ───
-  if (GEO_REQUIRED) {
-    const latitude  = parseFloat(lat);
-    const longitude = parseFloat(lng);
-    if (
-      isNaN(latitude) || isNaN(longitude) ||
-      latitude  < -90  || latitude  > 90  ||
-      longitude < -180 || longitude > 180
-    ) {
-      return res.status(400).json({ error: 'Coordonnées GPS manquantes ou invalides.' });
-    }
-    const dist = haversineDistance(OFFICE_LAT, OFFICE_LNG, latitude, longitude);
-    if (dist > MAX_RADIUS_M) {
-      return res.status(403).json({
-        error: `Vous êtes à ${Math.round(dist)} m des locaux (max ${MAX_RADIUS_M} m). Vous devez être sur place pour pointer.`
-      });
-    }
-  }
-
-  // ── 4. Vérification doublon : un seul pointage par type/agent/appareil par jour ─
-  const nom = rawName.trim().substring(0, 100);
+  // ── 3. Vérification doublon : un seul pointage par type/agent/appareil par jour ─
+  // NORMALISATION DU NOM : évite les variations frauduleuses
+  const nomNormalise = normalizeName(rawName);
+  const nomAffiche = rawName.trim().substring(0, 100); // nom original pour affichage
   const { date, heure } = getServerDateTime();
   const did = typeof device_id === 'string' ? device_id.substring(0, 64) : null;
+  const ua = typeof user_agent === 'string' ? user_agent.substring(0, 255) : 'inconnu';
+
+  if (nomNormalise.length === 0) {
+    return res.status(400).json({ error: "Nom d'agent invalide." });
+  }
 
   try {
-    // ── Lancer les 3 vérifications en parallèle (gain ~2× sur la latence Firestore) ─
+    // ── Lancer les 3 vérifications en parallèle ─
     const deviceQuery = did
       ? col.where('device_id', '==', did).where('date', '==', date).where('type', '==', pointageType).limit(1).get()
       : Promise.resolve({ empty: true });
 
     const [idSnap, byName, byDevice] = await Promise.all([
       col.orderBy('id', 'desc').limit(1).get(),
-      col.where('nom_agent_lower', '==', nom.toLowerCase()).where('date', '==', date).where('type', '==', pointageType).limit(1).get(),
+      col.where('nom_normalise', '==', nomNormalise).where('date', '==', date).where('type', '==', pointageType).limit(1).get(),
       deviceQuery
     ]);
 
@@ -405,23 +534,28 @@ app.post('/pointer', async (req, res) => {
 
     if (!byName.empty) {
       return res.status(409).json({
-        error: `Vous avez déjà effectué un pointage ${typeLabel} aujourd'hui (${date}).`
+        error: `Vous avez déjà effectué un pointage ${typeLabel} aujourd'hui (${date}). Impossible de faire 2 fois le même pointage.`
       });
     }
     if (!byDevice.empty) {
       return res.status(409).json({
-        error: `Cet appareil a déjà été utilisé pour un pointage ${typeLabel} aujourd'hui (${date}).`
+        error: `Cet appareil a déjà été utilisé pour un pointage ${typeLabel} aujourd'hui (${date}). Appareil bloqué après le 1er pointage.`
       });
     }
 
     const record = {
       id,
-      nom_agent: nom,
-      nom_agent_lower: nom.toLowerCase(),
+      nom_agent: nomAffiche,
+      nom_normalise: nomNormalise,            // ← NOUVEAU: nom normalisé pour vérifications
+      code_agent: agentCode || 'non-fourni',  // ← NOUVEAU: authentification optionnelle
       date,
       heure,
       type: pointageType,
-      device_id: did || 'inconnu'
+      device_id: did || 'inconnu',
+      user_agent: ua,                          // ← NOUVEAU: trace le navigateur
+      lat: latitude,                            // ← NOUVEAU: stocke localisation exacte
+      lng: longitude,
+      distance_m: Math.round(dist)            // ← NOUVEAU: distance vérifiée
     };
     await col.add(record);
 
@@ -444,7 +578,7 @@ app.post('/pointer', async (req, res) => {
       };
     }
 
-    res.status(201).json({ success: true, id, nom_agent: nom, date, heure, type: pointageType, alerte });
+    res.status(201).json({ success: true, id, nom_agent: nomAffiche, date, heure, type: pointageType, alerte });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur lors du pointage.' });

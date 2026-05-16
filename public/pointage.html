@@ -199,6 +199,16 @@
         maxlength="100"
         required
       >
+
+      <label for="code" style="margin-top: 14px;">Code Agent (optionnel)</label>
+      <input
+        id="code"
+        type="password"
+        placeholder="Code personnel"
+        maxlength="20"
+        autocomplete="off"
+      >
+
       <button id="btn" type="submit">✅ Valider le Pointage Arrivée</button>
     </form>
 
@@ -222,6 +232,7 @@
     let userLat      = null;
     let userLng      = null;
     let selectedType = 'arrivee'; // type actif
+    let SESSION_ID   = null; // sessionId créée après validation du token
 
     function selectType(type) {
       selectedType = type;
@@ -256,22 +267,57 @@
       alertEl.style.display = 'block';
     }
 
-    // ─── Device ID : identifiant unique par téléphone ─────────────────────────
-    function getDeviceId() {
+    // ─── Device ID enrichi : inclut des propriétés du navigateur ────────────
+    function getEnrichedDeviceId() {
       let id = localStorage.getItem('pointage_device_id');
       if (!id) {
+        // Créer un ID unique basé sur crypto + timestamp
         id = (crypto.randomUUID ? crypto.randomUUID() :
           Date.now().toString(36) + Math.random().toString(36).slice(2));
         localStorage.setItem('pointage_device_id', id);
       }
       return id;
     }
-    const DEVICE_ID = getDeviceId();
+    const DEVICE_ID = getEnrichedDeviceId();
 
-    // ─── Formulaire affiché directement, GPS tentée en arrière-plan ──────────
-    geoBox.style.display = 'none';
-    form.style.display   = 'block';
+    // ─── INITIALISATION SÉCURISÉE : Valider le token et créer une session ────
+    async function initializeSession() {
+      // Cas 1 : Pas de token → raccourci sauvegardé ou lien invalide
+      if (!TOKEN) {
+        showFatalError('⚠️ QR code manquant. Veuillez scanner le code affiché à l\'écran pour pointer.');
+        return;
+      }
 
+      geoBox.innerHTML = '<div class="spinner"></div><span>Vérification du QR code…</span>';
+      geoBox.style.display = 'block';
+      form.style.display = 'none';
+
+      try {
+        // Appel au serveur pour valider le token et créer une session
+        const res = await fetch('/init-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: TOKEN })
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.sessionId) {
+          // ✅ Session créée avec succès
+          SESSION_ID = data.sessionId;
+          geoBox.style.display = 'none';
+          form.style.display = 'block';
+          alertEl.style.display = 'none';
+        } else {
+          // ❌ Token invalide ou expiré
+          showFatalError(data.error || 'QR code invalide. Rescannez le code.');
+        }
+      } catch (err) {
+        showFatalError('Impossible de valider le QR code. Vérifiez votre connexion.');
+      }
+    }
+
+    // Tentative GPS en arrière-plan
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
@@ -288,7 +334,17 @@
       e.preventDefault();
 
       const nom = document.getElementById('nom').value.trim();
+      const codeAgent = document.getElementById('code').value.trim() || null;
+      
       if (!nom) return;
+
+      // Vérifier que la session existe encore (en cas de timeout > 5 min)
+      if (!SESSION_ID) {
+        alertEl.className   = 'alert error';
+        alertEl.textContent = '❌ Session expirée. Rescannez le QR code.';
+        alertEl.style.display = 'block';
+        return;
+      }
 
       btn.disabled          = true;
       btn.textContent       = 'Enregistrement…';
@@ -300,10 +356,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             nom_agent: nom,
-            token:     TOKEN,
+            code_agent: codeAgent,              // ← NOUVEAU: code agent optionnel
+            session_id: SESSION_ID,
             lat:       userLat,
             lng:       userLng,
             device_id: DEVICE_ID,
+            user_agent: navigator.userAgent,    // ← NOUVEAU: trace le navigateur
             type:      selectedType
           })
         });
@@ -349,6 +407,10 @@
           }
 
           document.getElementById('nom').value = '';
+          document.getElementById('code').value = '';
+          
+          // Effacer le sessionId pour forcer un nouveau scan du QR code
+          SESSION_ID = null;
         } else {
           alertEl.className   = 'alert error';
           alertEl.textContent = '❌ ' + (data.error || 'Une erreur est survenue.');
@@ -363,6 +425,9 @@
       const currentLabel = selectedType === 'arrivee' ? '✅ Valider le Pointage Arrivée' : '✅ Valider le Pointage Sortie';
       btn.textContent = currentLabel;
     });
+
+    // ─── Lancer l'initialisation de la session ─────────────────────────────────
+    initializeSession();
   </script>
 </body>
 </html>
