@@ -90,7 +90,7 @@ async function nextAutoId() {
 
 const OFFICE_LAT   =  5.4040; // ← latitude GPS de vos locaux (Angré, Abidjan)
 const OFFICE_LNG   = -3.9888; // ← longitude GPS de vos locaux (Angré, Abidjan)
-const MAX_RADIUS_M = 500;     // rayon maximum autorisé (mètres)
+const MAX_RADIUS_M = 20;      // rayon maximum autorisé pour le pointage QR (mètres)
 const GEO_REQUIRED = true;    // GPS OBLIGATOIRE pour prouver la présence physique (sécurité anti-fraude)
 const TOKEN_TTL_MS = 30_000;  // durée de vie d'un token QR (millisecondes)
 
@@ -502,7 +502,7 @@ app.post('/pointer', async (req, res) => {
   const dist = haversineDistance(OFFICE_LAT, OFFICE_LNG, latitude, longitude);
   if (dist > MAX_RADIUS_M) {
     return res.status(403).json({
-      error: `⚠️ FRAUDE DÉTECTÉE: Vous êtes à ${Math.round(dist)} m des locaux (max ${MAX_RADIUS_M} m). Vous devez être physiquement sur place pour pointer.`
+      error: 'Vous devriez être dans les locaux du bureau pour pointage.'
     });
   }
 
