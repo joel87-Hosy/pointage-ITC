@@ -446,12 +446,17 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             nom_agent: nom,
-          code_agent: codeAgent,
-          session_id: SESSION_ID,
-          lat:       userLat,
-          lng:       userLng,
-          device_id: DEVICE_ID,
-          user_agent: navigator.userAgent,
+            code_agent: codeAgent,
+            session_id: SESSION_ID,
+            lat:       userLat,
+            lng:       userLng,
+            device_id: DEVICE_ID,
+            user_agent: navigator.userAgent,
+            type:      selectedType
+          })
+        });
+
+        const data = await res.json();
 
         if (res.ok) {
           const isArrivee  = data.type !== 'sortie';
