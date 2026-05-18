@@ -52,6 +52,26 @@
       margin-bottom: 16px;
       outline: none;
     }
+    .pw-wrap {
+      position: relative;
+    }
+    .pw-toggle {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.08);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: rgba(255,255,255,0.9);
+    }
+    .pw-toggle:active { transform: translateY(-50%) scale(.98); }
     input:focus {
       border-color: #bbdefb;
       background: rgba(255,255,255,0.18);
@@ -96,8 +116,11 @@
       <label for="username">Nom d'utilisateur</label>
       <input id="username" name="username" type="text" autocomplete="username" required>
 
-      <label for="password">Mot de passe</label>
-      <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <label for="password">Mot de passe</label>
+        <div class="pw-wrap">
+          <input id="password" name="password" type="password" autocomplete="current-password" required>
+          <button type="button" id="pw-toggle" class="pw-toggle" aria-label="Afficher le mot de passe">👁️</button>
+        </div>
 
       <button type="submit">Se connecter</button>
     </form>
@@ -110,6 +133,18 @@
     if (params.get('error')) {
       document.getElementById('error').style.display = 'block';
     }
+    // Password visibility toggle
+    (function(){
+      const pw = document.getElementById('password');
+      const btn = document.getElementById('pw-toggle');
+      if (!pw || !btn) return;
+      btn.addEventListener('click', () => {
+        const isPwd = pw.type === 'password';
+        pw.type = isPwd ? 'text' : 'password';
+        btn.textContent = isPwd ? '🙈' : '👁️';
+        btn.setAttribute('aria-label', isPwd ? 'Masquer le mot de passe' : 'Afficher le mot de passe');
+      });
+    })();
   </script>
 </body>
 </html>
