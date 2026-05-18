@@ -351,12 +351,31 @@
 
   async function startCameraScanner() {
     if (codeReader) return;
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices) {
+      setBadgeStatus('Votre navigateur ne supporte pas la caméra.', true);
+      return;
+    }
     if (typeof ZXingBrowser === 'undefined') {
       setBadgeStatus('Chargement du scanner caméra…', false, true);
       return;
     }
 
     setBadgeStatus('Activation de la caméra… veuillez autoriser l’accès.', false, true);
+
+    // Choisir la caméra arrière si possible
+    let deviceId = null;
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoInputs = devices.filter(d => d.kind === 'videoinput');
+      if (videoInputs.length > 0) {
+        // Chercher un label suggérant caméra arrière
+        const rear = videoInputs.find(d => /back|rear|arrière|env|cam_r/i.test(d.label));
+        deviceId = rear ? rear.deviceId : videoInputs[videoInputs.length - 1].deviceId;
+      }
+    } catch (e) {
+      console.warn('enumerateDevices failed', e);
+    }
+
     codeReader = new ZXingBrowser.BrowserMultiFormatReader();
     try {
       const hints = new Map();
@@ -366,7 +385,8 @@
       ]);
       codeReader.setHints(hints);
 
-      await codeReader.decodeFromVideoDevice(null, 'scanner-video', (result, error) => {
+      // Timeout : si la caméra ne démarre pas en X secondes, afficher message
+      const startPromise = codeReader.decodeFromVideoDevice(deviceId || null, 'scanner-video', (result, error) => {
         if (result) {
           setBadgeStatus('Badge détecté : ' + result.getText());
           stopCameraScanner();
@@ -375,9 +395,21 @@
           console.warn('Scanner erreur', error);
         }
       });
+
+      // Promise.race to implement a startup timeout
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 7000));
+      await Promise.race([startPromise, timeout]);
+      // if started, remove loading spinner
+      badgeStatus.classList.remove('loading');
     } catch (err) {
       console.warn('Camera scanner failed', err);
-      setBadgeStatus('Impossible d’accéder à la caméra. Vérifiez l’autorisation.', true);
+      if (err && err.name === 'NotAllowedError') {
+        setBadgeStatus('Accès caméra refusé. Autorisez la caméra et rechargez.', true);
+      } else if (err && err.message === 'timeout') {
+        setBadgeStatus('La caméra met trop de temps à démarrer. Vérifiez la permission.', true);
+      } else {
+        setBadgeStatus('Impossible d’accéder à la caméra. Vérifiez l’autorisation.', true);
+      }
       stopCameraScanner();
     }
   }
