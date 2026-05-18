@@ -91,7 +91,7 @@ async function nextAutoId() {
 const OFFICE_LAT   =  5.4040; // ← latitude GPS de vos locaux (Angré, Abidjan)
 const OFFICE_LNG   = -3.9888; // ← longitude GPS de vos locaux (Angré, Abidjan)
 const MAX_RADIUS_M = 20;      // rayon maximum autorisé pour le pointage QR (mètres)
-const GEO_REQUIRED = true;    // GPS OBLIGATOIRE pour prouver la présence physique (sécurité anti-fraude)
+const GEO_REQUIRED = false;   // GPS OBLIGATOIRE pour prouver la présence physique (sécurité anti-fraude)
 const TOKEN_TTL_MS = 30_000;  // durée de vie d'un token QR (millisecondes)
 
 // ─── Règles horaires ────────────────────────────────────────────────────────
@@ -489,21 +489,34 @@ app.post('/pointer', async (req, res) => {
   const pointageType = (type === 'sortie') ? 'sortie' : 'arrivee';
   const typeLabel    = pointageType === 'arrivee' ? "d'arrivée" : "de sortie";
 
-  // ── 2. GÉOLOCALISATION — OBLIGATOIRE ─────────────────────────────────────
-  const latitude  = parseFloat(lat);
-  const longitude = parseFloat(lng);
-  if (
-    isNaN(latitude) || isNaN(longitude) ||
-    latitude  < -90  || latitude  > 90  ||
-    longitude < -180 || longitude > 180
-  ) {
-    return res.status(400).json({ error: 'Coordonnées GPS manquantes ou invalides.' });
-  }
-  const dist = haversineDistance(OFFICE_LAT, OFFICE_LNG, latitude, longitude);
-  if (dist > MAX_RADIUS_M) {
-    return res.status(403).json({
-      error: 'Vous devriez être dans les locaux du bureau pour pointage.'
-    });
+  // ── 2. GÉOLOCALISATION — OPTIONNELLE (contrôlée par GEO_REQUIRED) ─────────────────────────────────────
+  let latitude  = null;
+  let longitude = null;
+  let dist      = null;
+  
+  if (GEO_REQUIRED) {
+    latitude  = parseFloat(lat);
+    longitude = parseFloat(lng);
+    if (
+      isNaN(latitude) || isNaN(longitude) ||
+      latitude  < -90  || latitude  > 90  ||
+      longitude < -180 || longitude > 180
+    ) {
+      return res.status(400).json({ error: 'Coordonnées GPS manquantes ou invalides.' });
+    }
+    dist = haversineDistance(OFFICE_LAT, OFFICE_LNG, latitude, longitude);
+    if (dist > MAX_RADIUS_M) {
+      return res.status(403).json({
+        error: 'Vous devriez être dans les locaux du bureau pour pointage.'
+      });
+    }
+  } else {
+    // GPS non requis — utiliser les coordonnées si fournies, sinon null
+    latitude  = lat !== undefined ? parseFloat(lat) : null;
+    longitude = lng !== undefined ? parseFloat(lng) : null;
+    if (latitude !== null && longitude !== null && !isNaN(latitude) && !isNaN(longitude)) {
+      dist = haversineDistance(OFFICE_LAT, OFFICE_LNG, latitude, longitude);
+    }
   }
 
   // ── 3. Vérification doublon : un seul pointage par type/agent/appareil par jour ─
