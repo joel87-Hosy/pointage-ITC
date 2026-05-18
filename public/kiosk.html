@@ -379,7 +379,40 @@
       ]);
       codeReader.setHints(hints);
 
-      // Timeout : si la caméra ne démarre pas en X secondes, afficher message
+      // 1) Essayer getUserMedia + decodeFromVideoElement (préféré)
+      let stream = null;
+      try {
+        const constraints = deviceId
+          ? { video: { deviceId: { exact: deviceId } } }
+          : { video: { facingMode: { ideal: 'environment' } } };
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        scannerVideo.srcObject = stream;
+        scannerVideo.style.display = 'block';
+        await scannerVideo.play();
+
+        // Start ZXing on the playing video element
+        codeReader.decodeFromVideoElement(scannerVideo, (result, error) => {
+          if (result) {
+            setBadgeStatus('Badge détecté : ' + result.getText());
+            stopCameraScanner();
+          }
+          if (error && !(error instanceof ZXingBrowser.NotFoundException)) {
+            console.warn('Scanner erreur', error);
+          }
+        });
+
+        // wait short moment for the video to produce frames
+        await new Promise((resolve, reject) => setTimeout(resolve, 600));
+        badgeStatus.classList.remove('loading');
+        return;
+      } catch (gmErr) {
+        console.warn('getUserMedia failed, falling back to decodeFromVideoDevice', gmErr);
+        lastCameraError = gmErr;
+        cameraErrorEl && (cameraErrorEl.textContent = String(gmErr && gmErr.message ? gmErr.message : gmErr));
+        // fallthrough to decodeFromVideoDevice
+      }
+
+      // 2) Fallback : laisser ZXing gérer l'ouverture du device (decodeFromVideoDevice)
       const startPromise = codeReader.decodeFromVideoDevice(deviceId || null, 'scanner-video', (result, error) => {
         if (result) {
           setBadgeStatus('Badge détecté : ' + result.getText());
@@ -390,10 +423,8 @@
         }
       });
 
-      // Promise.race to implement a startup timeout
-      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 7000));
+      const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000));
       await Promise.race([startPromise, timeout]);
-      // if started, remove loading spinner
       badgeStatus.classList.remove('loading');
     } catch (err) {
       console.warn('Camera scanner failed', err);
