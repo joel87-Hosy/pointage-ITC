@@ -25,42 +25,6 @@
       gap: 24px;
       padding: 32px;
     }
-
-    /* ─── En-tête ─────────────────────────────────────────────────── */
-    .title {
-      font-size: clamp(22px, 4vw, 42px);
-      font-weight: 800;
-      text-align: center;
-      letter-spacing: .5px;
-    }
-
-    .subtitle {
-      font-size: clamp(14px, 2vw, 22px);
-      opacity: .8;
-      text-align: center;
-    }
-
-    /* ─── Cadre QR ────────────────────────────────────────────────── */
-    .qr-card {
-      background: #fff;
-      border-radius: 24px;
-      padding: 28px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 18px;
-      box-shadow: 0 32px 100px rgba(0,0,0,.4);
-    }
-
-    #qr-img {
-      display: block;
-      width: clamp(200px, 35vmin, 420px);
-      height: clamp(200px, 35vmin, 420px);
-      border-radius: 12px;
-      /* pas de transition : remplacement instantané sans clignotement */
-    }
-
-    /* ─── Barre de décompte ───────────────────────────────────────── */
     .countdown-area {
       width: 100%;
       text-align: center;
@@ -289,6 +253,23 @@
     </div>
     <div id="badge-status" class="badge-status loading">Activation de la caméra… veuillez autoriser l'accès.</div>
     <div class="badge-note">Le kiosque accepte les QR codes et les codes-barres Code 128.</div>
+    <div style="width:100%;max-width:420px;display:flex;flex-direction:column;gap:8px;margin-top:8px">
+      <button id="dbg-toggle" class="mode-btn" style="min-width:unset;padding:8px 12px;font-size:13px">Afficher diagnostic</button>
+      <div id="diagnostics" style="display:none;background:rgba(0,0,0,.35);padding:8px;border-radius:8px;font-size:12px">
+        <div style="margin-bottom:6px;font-weight:700">Périphériques vidéo détectés</div>
+        <pre id="device-list" style="max-height:120px;overflow:auto;margin:0 0 8px 0;color:#fff"></pre>
+        <div style="margin-bottom:6px;font-weight:700">Dernière erreur caméra</div>
+        <div id="camera-error" style="min-height:36px;color:#ffcc80">Aucune</div>
+        <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,.06);padding-top:8px">
+          <div style="margin-bottom:6px;font-weight:700">Saisie manuelle (fallback)</div>
+          <div style="display:flex;gap:8px">
+            <input id="manual-badge" placeholder="Entrez badge_id" style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:transparent;color:#fff" />
+            <button id="manual-submit" class="mode-btn" style="min-width:100px;padding:8px 12px;font-size:13px">Valider</button>
+          </div>
+          <div id="manual-result" style="margin-top:8px;color:#b2ff59"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="instruction" id="qr-instruction">
@@ -321,6 +302,16 @@
   const qrInstruction = document.getElementById('qr-instruction');
   const badgeStatus   = document.getElementById('badge-status');
   const scannerVideo  = document.getElementById('scanner-video');
+  const dbgToggle      = document.getElementById('dbg-toggle');
+  const diagnosticsEl  = document.getElementById('diagnostics');
+  const deviceListPre  = document.getElementById('device-list');
+  const cameraErrorEl  = document.getElementById('camera-error');
+  const manualInput    = document.getElementById('manual-badge');
+  const manualSubmit   = document.getElementById('manual-submit');
+  const manualResult   = document.getElementById('manual-result');
+
+  let lastCameraError = null;
+  let lastDevices = [];
 
   function setBadgeStatus(message, isError = false, loading = false) {
     badgeStatus.textContent = message;
@@ -367,6 +358,8 @@
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoInputs = devices.filter(d => d.kind === 'videoinput');
+      lastDevices = videoInputs;
+      renderDeviceList(videoInputs);
       if (videoInputs.length > 0) {
         // Chercher un label suggérant caméra arrière
         const rear = videoInputs.find(d => /back|rear|arrière|env|cam_r/i.test(d.label));
@@ -374,6 +367,7 @@
       }
     } catch (e) {
       console.warn('enumerateDevices failed', e);
+      cameraErrorEl && (cameraErrorEl.textContent = 'enumerateDevices error: ' + (e && e.message ? e.message : e));
     }
 
     codeReader = new ZXingBrowser.BrowserMultiFormatReader();
@@ -403,6 +397,8 @@
       badgeStatus.classList.remove('loading');
     } catch (err) {
       console.warn('Camera scanner failed', err);
+      lastCameraError = err;
+      cameraErrorEl && (cameraErrorEl.textContent = String(err && err.message ? err.message : err));
       if (err && err.name === 'NotAllowedError') {
         setBadgeStatus('Accès caméra refusé. Autorisez la caméra et rechargez.', true);
       } else if (err && err.message === 'timeout') {
@@ -522,6 +518,67 @@
   window.addEventListener('DOMContentLoaded', () => {
     const modeParam = new URLSearchParams(window.location.search).get('mode');
     selectMode(modeParam === 'badge' ? 'badge' : 'qr');
+  });
+
+  // Diagnostics & manual fallback
+  function renderDeviceList(videoInputs) {
+    if (!deviceListPre) return;
+    if (!videoInputs || videoInputs.length === 0) {
+      deviceListPre.textContent = 'Aucun périphérique vidéo détecté.';
+      return;
+    }
+    deviceListPre.textContent = videoInputs.map((d, i) => `${i+1}. ${d.label || 'non libellé'} — id=${d.deviceId}`).join('\n');
+  }
+
+  if (dbgToggle) dbgToggle.addEventListener('click', () => {
+    const showing = diagnosticsEl && diagnosticsEl.style.display === 'block';
+    if (!diagnosticsEl) return;
+    diagnosticsEl.style.display = showing ? 'none' : 'block';
+    dbgToggle.textContent = showing ? 'Afficher diagnostic' : 'Cacher diagnostic';
+    if (!showing && navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      navigator.mediaDevices.enumerateDevices().then(devs => {
+        const vids = devs.filter(d => d.kind === 'videoinput');
+        lastDevices = vids;
+        renderDeviceList(vids);
+      }).catch(e => { deviceListPre.textContent = 'Erreur enumerateDevices: ' + (e && e.message ? e.message : e); });
+    }
+  });
+
+  if (manualSubmit) manualSubmit.addEventListener('click', async () => {
+    const badgeId = (manualInput && manualInput.value || '').trim();
+    manualResult && (manualResult.textContent = '');
+    if (!badgeId) return manualResult && (manualResult.textContent = 'Entrez un badge_id.');
+    manualSubmit.disabled = true;
+    try {
+      const res = await fetch(`/badge-lookup?badge_id=${encodeURIComponent(badgeId)}`);
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({error:'Badge inconnu'}));
+        manualResult && (manualResult.style.color = '#ffb74d');
+        manualResult && (manualResult.textContent = err.error || 'Badge inconnu.');
+        return;
+      }
+      const { badge } = await res.json();
+      const payload = {
+        nom_agent: badge.nom_agent || badgeId,
+        badge_id: badgeId,
+        device_id: 'kiosk-manual',
+        user_agent: navigator.userAgent || 'kiosk'
+      };
+      const pRes = await fetch('/pointer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const pData = await pRes.json().catch(()=>({ error: 'Réponse invalide' }));
+      if (pRes.ok) {
+        manualResult && (manualResult.style.color = '#b2ff59');
+        manualResult && (manualResult.textContent = 'Pointage enregistré');
+      } else {
+        manualResult && (manualResult.style.color = '#ffb74d');
+        manualResult && (manualResult.textContent = pData.error || 'Erreur lors du pointage.');
+      }
+    } catch (e) {
+      manualResult && (manualResult.style.color = '#ffb74d');
+      manualResult && (manualResult.textContent = 'Erreur réseau: ' + (e && e.message ? e.message : e));
+    } finally {
+      manualSubmit.disabled = false;
+    }
   });
 </script>
   <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
