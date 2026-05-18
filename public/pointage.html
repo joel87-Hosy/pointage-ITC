@@ -282,9 +282,12 @@
 
     // ─── INITIALISATION SÉCURISÉE : Valider le token et créer une session ────
     async function initializeSession() {
-      // Cas 1 : Pas de token → raccourci sauvegardé ou lien invalide
+      // Si aucun token (QR imprimé/statique), autoriser le formulaire sans session.
       if (!TOKEN) {
-        showFatalError('⚠️ QR code manquant. Veuillez scanner le code affiché à l\'écran pour pointer.');
+        // Mode QR imprimé : on montre directement le formulaire.
+        SESSION_ID = null;
+        geoBox.style.display = 'none';
+        form.style.display = 'block';
         return;
       }
 
@@ -338,8 +341,8 @@
       
       if (!nom) return;
 
-      // Vérifier que la session existe encore (en cas de timeout > 5 min)
-      if (!SESSION_ID) {
+      // Si un token était fourni, la session doit exister.
+      if (TOKEN && !SESSION_ID) {
         alertEl.className   = 'alert error';
         alertEl.textContent = '❌ Session expirée. Rescannez le QR code.';
         alertEl.style.display = 'block';

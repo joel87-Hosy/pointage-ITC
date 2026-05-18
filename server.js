@@ -464,16 +464,15 @@ app.post('/pointer', async (req, res) => {
   const { nom_agent: rawName, code_agent, session_id: sessionId, lat, lng, device_id, type, user_agent } = req.body || {};
 
   // ── 0. Validation de la session (OBLIGATOIRE pour empêcher les raccourcis) ─
-  if (!sessionId) {
-    return res.status(403).json({
-      error: 'Session manquante. Vous devez scanner le QR code avant de pointer.'
-    });
-  }
-
-  if (!validateAndConsumeSession(sessionId)) {
-    return res.status(403).json({
-      error: 'Session expirée ou invalide. Rescannez le QR code et réessayez.'
-    });
+  // Note: Sessions are still validated when provided (dynamic QR flow).
+  // For printed/static QR codes we accept missing sessionId to allow
+  // pointage sans scanner un QR dynamique.
+  if (sessionId) {
+    if (!validateAndConsumeSession(sessionId)) {
+      return res.status(403).json({
+        error: 'Session expirée ou invalide. Rescannez le QR code et réessayez.'
+      });
+    }
   }
 
   // ── 1. Validation du nom ──────────────────────────────────────────────────
