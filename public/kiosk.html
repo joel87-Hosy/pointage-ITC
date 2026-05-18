@@ -206,6 +206,35 @@
       max-width: 320px;
     }
 
+    .badge-status {
+      min-height: 44px;
+      color: #fff;
+      font-size: 14px;
+      text-align: center;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .badge-status::before {
+      content: '';
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255,255,255,.7);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+      opacity: 0;
+    }
+
+    .badge-status.loading::before {
+      opacity: 1;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     /* ─── Impression (page d'affiche) ────────────────────────────── */
     #print-section { display: none; }
 
@@ -258,7 +287,7 @@
     <div class="scanner-frame">
       <video id="scanner-video" autoplay muted playsinline></video>
     </div>
-    <div id="badge-status" class="badge-status">Présentez votre badge devant la caméra.</div>
+    <div id="badge-status" class="badge-status loading">Activation de la caméra… veuillez autoriser l'accès.</div>
     <div class="badge-note">Le kiosque accepte les QR codes et les codes-barres Code 128.</div>
   </div>
 
@@ -293,9 +322,10 @@
   const badgeStatus   = document.getElementById('badge-status');
   const scannerVideo  = document.getElementById('scanner-video');
 
-  function setBadgeStatus(message, isError = false) {
+  function setBadgeStatus(message, isError = false, loading = false) {
     badgeStatus.textContent = message;
     badgeStatus.style.color = isError ? '#ffb74d' : '#fff';
+    badgeStatus.classList.toggle('loading', loading);
   }
 
   function selectMode(mode) {
@@ -306,7 +336,7 @@
       badgePanel.style.display = 'flex';
       qrCard.style.display = 'none';
       qrInstruction.style.display = 'none';
-      setBadgeStatus('Présentez votre badge devant la caméra.');
+      setBadgeStatus('Activation de la caméra… veuillez autoriser l’accès.', false, true);
       startCameraScanner();
     } else {
       badgePanel.style.display = 'none';
@@ -322,10 +352,11 @@
   async function startCameraScanner() {
     if (codeReader) return;
     if (typeof ZXingBrowser === 'undefined') {
-      setBadgeStatus('Chargement du scanner caméra…');
+      setBadgeStatus('Chargement du scanner caméra…', false, true);
       return;
     }
 
+    setBadgeStatus('Activation de la caméra… veuillez autoriser l’accès.', false, true);
     codeReader = new ZXingBrowser.BrowserMultiFormatReader();
     try {
       const hints = new Map();
@@ -360,6 +391,7 @@
       scannerVideo.srcObject.getTracks().forEach(track => track.stop());
       scannerVideo.srcObject = null;
     }
+    badgeStatus.classList.remove('loading');
   }
 
   // ─── Horloge temps réel ───────────────────────────────────────────────────

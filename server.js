@@ -21,6 +21,8 @@ app.set('trust proxy', 1);
 // ─── Sécurité admin ─────────────────────────────────────────────────────────
 const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || null;
+const ADMIN_COOKIE_NAME = 'pointage_admin';
+const ADMIN_COOKIE_MAX_AGE = 24 * 3600; // 1 jour
 
 if (!ADMIN_PASSWORD) {
   console.warn('  [ADMIN] ADMIN_PASSWORD non défini : accès admin désactivé tant que ce mot de passe n\'est pas configuré.');
@@ -254,6 +256,40 @@ function safeCompare(a, b) {
   return crypto.timingSafeEqual(aBuf, bBuf);
 }
 
+function parseCookies(req) {
+  const raw = req.headers.cookie || '';
+  return raw.split(';').reduce((cookies, pair) => {
+    const [name, ...rest] = pair.trim().split('=');
+    if (!name) return cookies;
+    cookies[name] = decodeURIComponent(rest.join('='));
+    return cookies;
+  }, {});
+}
+
+function createAdminToken() {
+  const payload = `${ADMIN_USERNAME}|${Date.now()}`;
+  const signature = crypto.createHmac('sha256', ADMIN_PASSWORD).update(payload).digest('hex');
+  return Buffer.from(`${payload}|${signature}`).toString('base64');
+}
+
+function verifyAdminToken(token) {
+  if (!token) return false;
+  let decoded;
+  try {
+    decoded = Buffer.from(token, 'base64').toString('utf8');
+  } catch {
+    return false;
+  }
+  const parts = decoded.split('|');
+  if (parts.length !== 3) return false;
+  const [username, ts, signature] = parts;
+  if (username !== ADMIN_USERNAME) return false;
+  const now = Date.now();
+  if (Number.isNaN(Number(ts)) || now - Number(ts) > ADMIN_COOKIE_MAX_AGE * 1000) return false;
+  const expected = crypto.createHmac('sha256', ADMIN_PASSWORD).update(`${username}|${ts}`).digest('hex');
+  return safeCompare(signature, expected);
+}
+
 function requestAdminAuth(res) {
   res.setHeader('WWW-Authenticate', 'Basic realm="Admin Pointage", charset="UTF-8"');
   return res.status(401).send('Authentification admin requise.');
@@ -282,27 +318,36 @@ function requireAdminAuth(req, res, next) {
     });
   }
 
+  const cookies = parseCookies(req);
+  if (verifyAdminToken(cookies[ADMIN_COOKIE_NAME])) {
+    return next();
+  }
+
   const authHeader = req.headers.authorization || '';
-  if (!authHeader.startsWith('Basic ')) return requestAdminAuth(res);
+  if (authHeader.startsWith('Basic ')) {
+    let decoded;
+    try {
+      decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
+    } catch {
+      return requestAdminAuth(res);
+    }
 
-  let decoded;
-  try {
-    decoded = Buffer.from(authHeader.slice(6), 'base64').toString('utf8');
-  } catch {
-    return requestAdminAuth(res);
+    const sep = decoded.indexOf(':');
+    if (sep < 0) return requestAdminAuth(res);
+
+    const username = decoded.slice(0, sep);
+    const password = decoded.slice(sep + 1);
+
+    if (safeCompare(username, ADMIN_USERNAME) && safeCompare(password, ADMIN_PASSWORD)) {
+      return next();
+    }
   }
 
-  const sep = decoded.indexOf(':');
-  if (sep < 0) return requestAdminAuth(res);
-
-  const username = decoded.slice(0, sep);
-  const password = decoded.slice(sep + 1);
-
-  if (!safeCompare(username, ADMIN_USERNAME) || !safeCompare(password, ADMIN_PASSWORD)) {
-    return requestAdminAuth(res);
+  if (req.method === 'GET' && req.accepts(['html', 'json', 'text']) === 'html') {
+    return res.redirect('/admin-login');
   }
 
-  next();
+  return requestAdminAuth(res);
 }
 
 function isAdminProtectedPath(pathname) {
@@ -364,6 +409,7 @@ app.use((_req, res, next) => {
 });
 
 app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
 app.use((req, res, next) => {
   if (isAdminProtectedPath(req.path)) return requireAdminAuth(req, res, next);
   next();
@@ -434,6 +480,27 @@ app.get('/kiosk', (_req, res) => {
 app.get('/admin', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store'); // toujours la dernière version
   res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// Page de connexion admin sans Basic Auth
+app.get('/admin-login', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'public', 'admin-login.html'));
+});
+
+app.post('/admin-login', (req, res) => {
+  if (!ADMIN_PASSWORD) {
+    return res.status(503).send('Acces admin indisponible : ADMIN_PASSWORD non configure sur le serveur.');
+  }
+
+  const { username, password } = req.body || {};
+  if (safeCompare(username, ADMIN_USERNAME) && safeCompare(password, ADMIN_PASSWORD)) {
+    const token = createAdminToken();
+    res.setHeader('Set-Cookie', `${ADMIN_COOKIE_NAME}=${encodeURIComponent(token)}; Max-Age=${ADMIN_COOKIE_MAX_AGE}; Path=/; HttpOnly`);
+    return res.redirect('/admin');
+  }
+
+  res.redirect('/admin-login?error=1');
 });
 
 // ─── API ──────────────────────────────────────────────────────────────────────
