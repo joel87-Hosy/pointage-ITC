@@ -381,7 +381,7 @@
       codeReader.setHints(hints);
 
       scannerVideo.style.display = 'block';
-      await codeReader.decodeFromVideoDevice(deviceId || null, 'scanner-video', (result, error) => {
+      const startPromise = codeReader.decodeFromVideoDevice(deviceId || null, 'scanner-video', (result, error) => {
         if (result) {
           setBadgeStatus('Badge détecté : ' + result.getText());
           stopCameraScanner();
@@ -393,10 +393,12 @@
         }
       });
 
+      const startTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('start-timeout')), 8000));
+      await Promise.race([startPromise, startTimeout]);
       badgeStatus.classList.remove('loading');
       return;
     } catch (err) {
-      console.warn('decodeFromVideoDevice failed, trying getUserMedia fallback', err);
+      console.warn('decodeFromVideoDevice failed or timed out, trying getUserMedia fallback', err);
       lastCameraError = err;
       cameraErrorEl && (cameraErrorEl.textContent = String(err && err.message ? err.message : err));
     }
@@ -405,24 +407,33 @@
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
       scannerVideo.srcObject = stream;
       scannerVideo.style.display = 'block';
+
+      const videoReady = new Promise(resolve => {
+        if (scannerVideo.readyState >= 3) return resolve(true);
+        scannerVideo.onplaying = () => resolve(true);
+        setTimeout(() => resolve(false), 6000);
+      });
       await scannerVideo.play();
 
-      await new Promise((resolve, reject) => {
-        codeReader.decodeFromVideoElement(scannerVideo, (result, error) => {
-          if (result) {
-            setBadgeStatus('Badge détecté : ' + result.getText());
-            stopCameraScanner();
-          }
-          if (error && !(error instanceof ZXingBrowser.NotFoundException)) {
-            console.warn('Scanner erreur', error);
-            lastCameraError = error;
-            cameraErrorEl && (cameraErrorEl.textContent = String(error && error.message ? error.message : error));
-          }
-        });
-        setTimeout(resolve, 600);
+      codeReader.decodeFromVideoElement(scannerVideo, (result, error) => {
+        if (result) {
+          setBadgeStatus('Badge détecté : ' + result.getText());
+          stopCameraScanner();
+        }
+        if (error && !(error instanceof ZXingBrowser.NotFoundException)) {
+          console.warn('Scanner erreur', error);
+          lastCameraError = error;
+          cameraErrorEl && (cameraErrorEl.textContent = String(error && error.message ? error.message : error));
+        }
       });
 
+      const videoStarted = await videoReady;
+      if (!videoStarted) {
+        throw new Error('video-start-failed');
+      }
+
       badgeStatus.classList.remove('loading');
+      return;
     } catch (err) {
       console.warn('Camera scanner failed', err);
       lastCameraError = err;
@@ -431,6 +442,10 @@
         setBadgeStatus('Accès caméra refusé. Autorisez la caméra et rechargez.', true);
       } else if (err && err.name === 'NotFoundError') {
         setBadgeStatus('Aucune caméra détectée ou accessible.', true);
+      } else if (err && err.message === 'start-timeout') {
+        setBadgeStatus('La caméra ne démarre pas. Réessayez ou utilisez le fallback manuel.', true);
+      } else if (err && err.message === 'video-start-failed') {
+        setBadgeStatus('La vidéo n’a pas démarré. Vérifiez que la caméra est accessible.', true);
       } else {
         setBadgeStatus('Impossible d’accéder à la caméra. Vérifiez l’autorisation.', true);
       }
