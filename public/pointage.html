@@ -220,7 +220,11 @@
 
     // ─── Récupération du token dans l'URL ────────────────────────────────────
     const urlParams = new URLSearchParams(window.location.search);
-    const TOKEN = urlParams.get('token');
+    let TOKEN = urlParams.get('token');
+    // Traiter les valeurs communes invalides comme l'absence de token
+    if (TOKEN === 'undefined' || TOKEN === 'null' || TOKEN === '') TOKEN = null;
+    // Si un token est présent mais malformé, le considérer comme absent (mode statique)
+    if (typeof TOKEN === 'string' && !/^[0-9a-f]{16}$/.test(TOKEN)) TOKEN = null;
 
     const form      = document.getElementById('form');
     const btn       = document.getElementById('btn');

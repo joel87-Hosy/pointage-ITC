@@ -462,6 +462,14 @@ app.post('/init-session', (req, res) => {
  */
 app.post('/pointer', async (req, res) => {
   const { nom_agent: rawName, code_agent, session_id: sessionId, lat, lng, device_id, type, user_agent } = req.body || {};
+  // Log pour debug des pointages sans session (QR statique)
+  if (!sessionId) {
+    console.log('POST /pointer (sans session) — payload:', {
+      nom_agent: rawName ? String(rawName).slice(0,100) : rawName,
+      device_id: device_id || null,
+      ua: user_agent ? String(user_agent).slice(0,120) : null
+    });
+  }
 
   // ── 0. Validation de la session (OBLIGATOIRE pour empêcher les raccourcis) ─
   // Note: Sessions are still validated when provided (dynamic QR flow).
