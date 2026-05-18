@@ -8,22 +8,55 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
-      height: 100%;
+      min-height: 100%;
       background: #0d47a1;
       font-family: 'Segoe UI', system-ui, sans-serif;
       color: #fff;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
       user-select: none;
     }
 
     .screen {
-      height: 100%;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: center;
+      justify-content: flex-start;
       gap: 24px;
       padding: 32px;
+    }
+    .qr-card,
+    .badge-panel {
+      width: 100%;
+      max-width: 460px;
+    }
+    .badge-panel {
+      align-items: stretch;
+    }
+    .scanner-frame {
+      width: 100%;
+      max-width: 100%;
+      height: min(320px, 40vh);
+    }
+    .mode-switch {
+      width: 100%;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    .mode-btn {
+      min-width: 120px;
+      width: auto;
+    }
+    #diagnostics {
+      width: 100%;
+    }
+    @media (max-width: 720px) {
+      .screen { padding: 18px; gap: 18px; }
+      .mode-btn { width: 100%; min-width: unset; }
+      .badge-note, .badge-status { font-size: 13px; }
+      .scanner-frame { height: min(280px, 40vh); }
+      .badge-panel > div:last-child { width: 100%; }
     }
     .countdown-area {
       width: 100%;
