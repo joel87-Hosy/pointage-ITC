@@ -10,6 +10,7 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
+    "bwip-js": "^4.10.1",
     "compression": "^1.8.1",
     "dotenv": "^17.4.2",
     "exceljs": "^4.4.0",

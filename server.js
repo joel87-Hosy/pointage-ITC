@@ -59,6 +59,20 @@ admin.initializeApp({
 const db  = admin.firestore();
 const col = db.collection('pointages');
 
+// Badge map optionnelle pour scanner les badges d'agent
+let badgesMap = new Map();
+try {
+  const badgeFile = path.join(__dirname, 'badges.json');
+  const badgeList = JSON.parse(fs.readFileSync(badgeFile, 'utf8'));
+  badgesMap = new Map(badgeList.map(b => [String(b.badge_id), b]));
+} catch (err) {
+  console.warn('Aucun fichier badges.json trouvé ou JSON invalide. Le mode badge reste disponible mais sans correspondances.');
+}
+function lookupBadge(badgeId) {
+  if (typeof badgeId !== 'string') return null;
+  return badgesMap.get(badgeId.trim());
+}
+
 // Préchauffage Firestore : établit la connexion dès le démarrage
 // pour que la 1ère requête d'un agent ne subisse pas le délai de connexion
 col.limit(1).get()
@@ -454,6 +468,18 @@ app.post('/init-session', (req, res) => {
   });
 });
 
+app.get('/badge-lookup', (req, res) => {
+  const badgeId = typeof req.query.badge_id === 'string' ? req.query.badge_id.trim() : '';
+  if (!badgeId) {
+    return res.status(400).json({ error: 'badge_id manquant.' });
+  }
+  const badge = lookupBadge(badgeId);
+  if (!badge) {
+    return res.status(404).json({ error: 'Badge inconnu.' });
+  }
+  res.json({ badge });
+});
+
 /**
  * POST /pointer
  * Enregistre la présence d'un agent.
@@ -461,14 +487,21 @@ app.post('/init-session', (req, res) => {
  * → impossible pour l'agent de falsifier l'heure via son téléphone.
  */
 app.post('/pointer', async (req, res) => {
-  const { nom_agent: rawName, code_agent, session_id: sessionId, lat, lng, device_id, type, user_agent } = req.body || {};
+  let { nom_agent: rawName, code_agent, session_id: sessionId, lat, lng, device_id, type, user_agent, badge_id: badgeId } = req.body || {};
+  badgeId = typeof badgeId === 'string' ? badgeId.trim().substring(0, 64) : null;
   // Log pour debug des pointages sans session (QR statique)
   if (!sessionId) {
     console.log('POST /pointer (sans session) — payload:', {
+      badge_id: badgeId || null,
       nom_agent: rawName ? String(rawName).slice(0,100) : rawName,
       device_id: device_id || null,
       ua: user_agent ? String(user_agent).slice(0,120) : null
     });
+  }
+
+  if (!rawName && badgeId) {
+    const badge = lookupBadge(badgeId);
+    if (badge) rawName = badge.nom_agent;
   }
 
   // ── 0. Validation de la session (OBLIGATOIRE pour empêcher les raccourcis) ─
@@ -565,6 +598,7 @@ app.post('/pointer', async (req, res) => {
 
     const record = {
       id,
+      badge_id: badgeId || 'non-fourni',
       nom_agent: nomAffiche,
       nom_normalise: nomNormalise,            // ← NOUVEAU: nom normalisé pour vérifications
       code_agent: agentCode || 'non-fourni',  // ← NOUVEAU: authentification optionnelle

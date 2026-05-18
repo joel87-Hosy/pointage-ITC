@@ -1,0 +1,12 @@
+[
+  {
+    "badge_id": "AGT001",
+    "nom_agent": "Jean Dupont",
+    "fonction": "Agent de sécurité"
+  },
+  {
+    "badge_id": "AGT002",
+    "nom_agent": "Fatou Diarra",
+    "fonction": "Accueil"
+  }
+]
