@@ -128,6 +128,84 @@
       letter-spacing: .5px;
     }
 
+    .mode-switch {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+
+    .mode-btn {
+      min-width: 140px;
+      padding: 12px 18px;
+      font-size: 14px;
+      font-weight: 700;
+      border: 2px solid rgba(255,255,255,.45);
+      border-radius: 999px;
+      background: rgba(255,255,255,.92);
+      color: #0d47a1;
+      cursor: pointer;
+      transition: all .2s ease;
+    }
+
+    .mode-btn.active {
+      background: #0d47a1;
+      color: #fff;
+      border-color: #fff;
+    }
+
+    .badge-panel {
+      display: none;
+      width: 100%;
+      max-width: 460px;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .badge-label {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+      background: rgba(255,255,255,.16);
+      border: 1px solid rgba(255,255,255,.24);
+      border-radius: 999px;
+      padding: 9px 18px;
+    }
+
+    .scanner-frame {
+      width: 100%;
+      max-width: 420px;
+      height: min(320px, 45vh);
+      background: #000;
+      border-radius: 22px;
+      overflow: hidden;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+    }
+
+    #scanner-video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      background: #000;
+    }
+
+    .badge-status {
+      min-height: 44px;
+      color: #fff;
+      font-size: 14px;
+      text-align: center;
+      padding: 0 10px;
+    }
+
+    .badge-note {
+      color: #e0e0e0;
+      font-size: 13px;
+      text-align: center;
+      max-width: 320px;
+    }
+
     /* ─── Impression (page d'affiche) ────────────────────────────── */
     #print-section { display: none; }
 
@@ -155,6 +233,11 @@
 <div class="screen" id="screen">
   <div class="title">&#128203; Pointage des Agents</div>
 
+  <div class="mode-switch">
+    <button id="btn-mode-qr" class="mode-btn active" type="button">Téléphone / QR</button>
+    <button id="btn-mode-badge" class="mode-btn" type="button">Badge</button>
+  </div>
+
   <div class="clock" id="clock">--:--:--</div>
   <div class="date-str" id="date-str"></div>
 
@@ -170,7 +253,16 @@
     </div>
   </div>
 
-  <div class="instruction">
+  <div class="badge-panel" id="badge-panel">
+    <div class="badge-label">📷 Mode badge</div>
+    <div class="scanner-frame">
+      <video id="scanner-video" autoplay muted playsinline></video>
+    </div>
+    <div id="badge-status" class="badge-status">Présentez votre badge devant la caméra.</div>
+    <div class="badge-note">Le kiosque accepte les QR codes et les codes-barres Code 128.</div>
+  </div>
+
+  <div class="instruction" id="qr-instruction">
     &#128247; Scannez ce code avec votre téléphone pour pointer votre présence
   </div>
 
@@ -190,6 +282,85 @@
 
   let countdownTimer = null;
   let refreshTimer   = null;
+  let codeReader     = null;
+  let currentMode    = 'qr';
+
+  const btnModeQR     = document.getElementById('btn-mode-qr');
+  const btnModeBadge  = document.getElementById('btn-mode-badge');
+  const badgePanel    = document.getElementById('badge-panel');
+  const qrCard        = document.querySelector('.qr-card');
+  const qrInstruction = document.getElementById('qr-instruction');
+  const badgeStatus   = document.getElementById('badge-status');
+  const scannerVideo  = document.getElementById('scanner-video');
+
+  function setBadgeStatus(message, isError = false) {
+    badgeStatus.textContent = message;
+    badgeStatus.style.color = isError ? '#ffb74d' : '#fff';
+  }
+
+  function selectMode(mode) {
+    currentMode = mode === 'badge' ? 'badge' : 'qr';
+    btnModeQR.classList.toggle('active', currentMode === 'qr');
+    btnModeBadge.classList.toggle('active', currentMode === 'badge');
+    if (currentMode === 'badge') {
+      badgePanel.style.display = 'flex';
+      qrCard.style.display = 'none';
+      qrInstruction.style.display = 'none';
+      setBadgeStatus('Présentez votre badge devant la caméra.');
+      startCameraScanner();
+    } else {
+      badgePanel.style.display = 'none';
+      qrCard.style.display = 'flex';
+      qrInstruction.style.display = 'block';
+      stopCameraScanner();
+    }
+  }
+
+  btnModeQR.addEventListener('click', () => selectMode('qr'));
+  btnModeBadge.addEventListener('click', () => selectMode('badge'));
+
+  async function startCameraScanner() {
+    if (codeReader) return;
+    if (typeof ZXingBrowser === 'undefined') {
+      setBadgeStatus('Chargement du scanner caméra…');
+      return;
+    }
+
+    codeReader = new ZXingBrowser.BrowserMultiFormatReader();
+    try {
+      const hints = new Map();
+      hints.set(ZXingBrowser.DecodeHintType.POSSIBLE_FORMATS, [
+        ZXingBrowser.BarcodeFormat.QR_CODE,
+        ZXingBrowser.BarcodeFormat.CODE_128
+      ]);
+      codeReader.setHints(hints);
+
+      await codeReader.decodeFromVideoDevice(null, 'scanner-video', (result, error) => {
+        if (result) {
+          setBadgeStatus('Badge détecté : ' + result.getText());
+          stopCameraScanner();
+        }
+        if (error && !(error instanceof ZXingBrowser.NotFoundException)) {
+          console.warn('Scanner erreur', error);
+        }
+      });
+    } catch (err) {
+      console.warn('Camera scanner failed', err);
+      setBadgeStatus('Impossible d’accéder à la caméra. Vérifiez l’autorisation.', true);
+      stopCameraScanner();
+    }
+  }
+
+  function stopCameraScanner() {
+    if (codeReader) {
+      try { codeReader.reset(); } catch {};
+      codeReader = null;
+    }
+    if (scannerVideo && scannerVideo.srcObject) {
+      scannerVideo.srcObject.getTracks().forEach(track => track.stop());
+      scannerVideo.srcObject = null;
+    }
+  }
 
   // ─── Horloge temps réel ───────────────────────────────────────────────────
   function updateClock() {
@@ -283,6 +454,12 @@
   // ─── Initialisation ───────────────────────────────────────────────────────
   loadQR();
   loadStaticQR(); // prépare le QR d'impression en arrière-plan
+
+  window.addEventListener('DOMContentLoaded', () => {
+    const modeParam = new URLSearchParams(window.location.search).get('mode');
+    selectMode(modeParam === 'badge' ? 'badge' : 'qr');
+  });
 </script>
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
 </body>
 </html>

@@ -378,7 +378,9 @@
       </div>
 
       <button id="print-btn" onclick="window.open('/kiosk','_blank')">&#128250; Ouvrir le kiosque (écran d'entrée)</button>
+      <button id="print-btn" onclick="window.open('/kiosk?mode=badge','_blank')" style="margin-top:8px;background:#6a1b9a">🔐 Ouvrir le kiosque en mode badge</button>
       <button id="print-btn" onclick="printStaticQR()" style="margin-top:8px;background:#1b5e20">&#128424; Imprimer l'affiche (QR statique)</button>
+      <p style="font-size:13px;color:#555;margin-top:12px;line-height:1.4;">Le mode badge active la caméra du kiosque pour scanner QR et Code 128 sans téléphone.</p>
     </div>
 
     <!-- ─── Panneau Enregistrements ─────────────────────────────────────────── -->
