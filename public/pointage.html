@@ -212,19 +212,6 @@
     <h1>Pointage des Agents</h1>
     <p class="subtitle">Sélectionnez le type de pointage puis entrez votre nom</p>
 
-    <div class="scan-choice">
-      <button type="button" id="btn-mode-qr" class="scan-btn active">Téléphone / QR</button>
-      <button type="button" id="btn-mode-badge" class="scan-btn">Badge</button>
-    </div>
-
-    <div id="badge-section" class="badge-section" style="display:none;">
-      <label for="badge-code">Badge agent</label>
-      <input id="badge-code" type="text" placeholder="Présentez votre badge au lecteur" maxlength="64" autocomplete="off" />
-      <p style="font-size:13px; color:#555; margin:8px 0 0;">Scannez un QR ou un code-barres Code 128 avec la caméra.</p>
-      <div id="qr-reader" style="width:100%;max-width:360px;height:240px;display:none;margin-top:12px;border-radius:8px;overflow:hidden;"></div>
-      <div id="badge-info" class="geo-status" style="display:none; background:#f3e5f5; border-color:#ce93d8; color:#4a148c;"></div>
-    </div>
-
     <!-- Statut GPS -->
     <div id="geo-box" class="geo-status">
       <div class="spinner"></div>
@@ -280,85 +267,17 @@
     const geoBox        = document.getElementById('geo-box');
     const btnArr        = document.getElementById('btn-arrivee');
     const btnSortie     = document.getElementById('btn-sortie');
-    const btnModeQR     = document.getElementById('btn-mode-qr');
-    const btnModeBadge  = document.getElementById('btn-mode-badge');
-    const badgeSection  = document.getElementById('badge-section');
-    const badgeCodeInput = document.getElementById('badge-code');
-    const badgeInfo     = document.getElementById('badge-info');
     const badgeIdHidden = document.getElementById('badge-id-hidden');
 
     let userLat      = null;
     let userLng      = null;
     let selectedType = 'arrivee'; // type actif
     let SESSION_ID   = null; // sessionId créée après validation du token
-    let scanMode     = TOKEN ? 'qr' : 'badge';
-    let currentBadgeId = null;
 
-    function selectScanMode(mode) {
-      scanMode = mode;
-      btnModeQR.className = mode === 'qr' ? 'scan-btn active' : 'scan-btn';
-      btnModeBadge.className = mode === 'badge' ? 'scan-btn active' : 'scan-btn';
-      if (mode === 'badge') {
-        badgeSection.style.display = 'block';
-        geoBox.style.display = 'none';
-        form.style.display = 'block';
-        badgeCodeInput.value = '';
-        badgeInfo.style.display = 'none';
-        badgeIdHidden.value = '';
-        currentBadgeId = null;
-        badgeCodeInput.focus();
-        document.getElementById('qr-reader').style.display = 'block';
-        startCameraScanner();
-      } else {
-        badgeSection.style.display = 'none';
-        badgeInfo.style.display = 'none';
-        stopCameraScanner();
-        document.getElementById('qr-reader').style.display = 'none';
-        initializeSession();
-      }
+    function selectScanMode() {
+      initializeSession();
     }
 
-    async function lookupBadge(badgeId) {
-      try {
-        const res = await fetch(`/badge-lookup?badge_id=${encodeURIComponent(badgeId)}`);
-        return await res.json();
-      } catch {
-        return null;
-      }
-    }
-
-    async function onBadgeScanned(value) {
-      const trimmed = value.trim();
-      if (!trimmed) return;
-      const data = await lookupBadge(trimmed);
-      if (!data || !data.badge) {
-        badgeInfo.className = 'geo-status err';
-        badgeInfo.textContent = 'Badge inconnu. Vérifiez le badge ou contactez l\'administration.';
-        badgeInfo.style.display = 'flex';
-        currentBadgeId = null;
-        badgeIdHidden.value = '';
-        return;
-      }
-
-      badgeInfo.className = 'geo-status ok';
-      badgeInfo.textContent = `Badge reconnu : ${data.badge.nom_agent} — ${data.badge.fonction}`;
-      badgeInfo.style.display = 'flex';
-      currentBadgeId = trimmed;
-      badgeIdHidden.value = trimmed;
-      document.getElementById('nom').value = data.badge.nom_agent;
-    }
-
-    btnModeQR.addEventListener('click', () => selectScanMode('qr'));
-    btnModeBadge.addEventListener('click', () => selectScanMode('badge'));
-
-    badgeCodeInput.addEventListener('keydown', async (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        await onBadgeScanned(badgeCodeInput.value);
-      }
-    });
-
-    // Camera scanner multi-format (QR + Code128)
     let codeReader = null;
     async function startCameraScanner() {
       if (typeof ZXingBrowser === 'undefined') return;
@@ -527,18 +446,12 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             nom_agent: nom,
-            code_agent: codeAgent,              // ← NOUVEAU: code agent optionnel
-            badge_id: currentBadgeId,
-            session_id: SESSION_ID,
-            lat:       userLat,
-            lng:       userLng,
-            device_id: DEVICE_ID,
-            user_agent: navigator.userAgent,    // ← NOUVEAU: trace le navigateur
-            type:      selectedType
-          })
-        });
-
-        const data = await res.json();
+          code_agent: codeAgent,
+          session_id: SESSION_ID,
+          lat:       userLat,
+          lng:       userLng,
+          device_id: DEVICE_ID,
+          user_agent: navigator.userAgent,
 
         if (res.ok) {
           const isArrivee  = data.type !== 'sortie';
@@ -599,7 +512,7 @@
     });
 
     // ─── Lancer l'initialisation du mode de pointage ─────────────────────────
-    selectScanMode(scanMode);
+    initializeSession();
   </script>
   <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.19.1/umd/index.min.js"></script>
 </body>
