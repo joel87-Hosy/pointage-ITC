@@ -9,9 +9,9 @@ const crypto      = require('crypto');
 const fs          = require('fs');
 const path        = require('path');
 const os          = require('os');
-const admin       = require('firebase-admin');
 const PDFDocument = require('pdfkit');
 const ExcelJS     = require('exceljs');
+const { createPointageStore } = require('./pointage-store');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -28,38 +28,17 @@ if (!ADMIN_PASSWORD) {
   console.warn('  [ADMIN] ADMIN_PASSWORD non défini : accès admin désactivé tant que ce mot de passe n\'est pas configuré.');
 }
 
-// ─── Firebase / Firestore ─────────────────────────────────────────────────────
+// ─── Stockage des pointages ───────────────────────────────────────────────────
 
-let serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT || null;
-if (!serviceAccountRaw && process.env.FIREBASE_SERVICE_ACCOUNT_FILE) {
-  try {
-    serviceAccountRaw = fs.readFileSync(process.env.FIREBASE_SERVICE_ACCOUNT_FILE, 'utf8');
-  } catch {
-    console.error('ERREUR : FIREBASE_SERVICE_ACCOUNT_FILE est défini, mais le fichier est introuvable ou illisible.');
-    process.exit(1);
-  }
-}
-
-if (!serviceAccountRaw) {
-  console.error('ERREUR : La variable FIREBASE_SERVICE_ACCOUNT est manquante.');
-  console.error('Astuce locale : définissez FIREBASE_SERVICE_ACCOUNT_FILE=.\\firebase-service-account.json dans .env');
-  process.exit(1);
-}
-
-let serviceAccount;
+let store;
 try {
-  serviceAccount = JSON.parse(serviceAccountRaw);
-} catch {
-  console.error('ERREUR : FIREBASE_SERVICE_ACCOUNT n\'est pas un JSON valide.');
+  store = createPointageStore();
+} catch (err) {
+  console.error('ERREUR : stockage indisponible.');
+  console.error(err.message);
+  console.error('Configurez DATABASE_URL pour PostgreSQL ou FIREBASE_SERVICE_ACCOUNT pour Firestore.');
   process.exit(1);
 }
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
-});
-
-const db  = admin.firestore();
-const col = db.collection('pointages');
 
 // Badge map optionnelle pour scanner les badges d'agent
 let badgesMap = new Map();
@@ -75,29 +54,20 @@ function lookupBadge(badgeId) {
   return badgesMap.get(badgeId.trim());
 }
 
-// Préchauffage Firestore : établit la connexion dès le démarrage
+// Préchauffage du stockage : établit la connexion dès le démarrage
 // pour que la 1ère requête d'un agent ne subisse pas le délai de connexion
-col.limit(1).get()
-  .then(() => console.log('  Firestore connecté ✓'))
-  .catch(e => console.error('  Firestore connexion échouée :', e.message));
+store.warmup()
+  .then(() => console.log(`  ${store.name} connecte`))
+  .catch(e => console.error(`  ${store.name} connexion echouee :`, e.message));
 
 // Helper : retourne les enregistrements triés, filtrés par date optionnelle
 async function fetchRecords(date) {
-  if (!date) {
-    const snap = await col.orderBy('id', 'desc').limit(1000).get();
-    return snap.docs.map(d => d.data());
-  }
-
-  const snap = await col.where('date', '==', date).get();
-  return snap.docs
-    .map(d => d.data())
-    .sort((a, b) => (b.id || 0) - (a.id || 0));
+  return store.fetchRecords(date);
 }
 
 // Helper : prochain ID auto-incrémenté
 async function nextAutoId() {
-  const snap = await col.orderBy('id', 'desc').limit(1).get();
-  return snap.empty ? 1 : snap.docs[0].data().id + 1;
+  return store.getNextId();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -640,24 +610,18 @@ app.post('/pointer', async (req, res) => {
 
   try {
     // ── Lancer les 3 vérifications en parallèle ─
-    const deviceQuery = did
-      ? col.where('device_id', '==', did).where('date', '==', date).where('type', '==', pointageType).limit(1).get()
-      : Promise.resolve({ empty: true });
-
-    const [idSnap, byName, byDevice] = await Promise.all([
-      col.orderBy('id', 'desc').limit(1).get(),
-      col.where('nom_normalise', '==', nomNormalise).where('date', '==', date).where('type', '==', pointageType).limit(1).get(),
-      deviceQuery
+    const [id, byName, byDevice] = await Promise.all([
+      store.getNextId(),
+      store.hasDuplicateByName(nomNormalise, date, pointageType),
+      store.hasDuplicateByDevice(did, date, pointageType)
     ]);
 
-    const id = idSnap.empty ? 1 : idSnap.docs[0].data().id + 1;
-
-    if (!byName.empty) {
+    if (byName) {
       return res.status(409).json({
         error: `Vous avez déjà effectué un pointage ${typeLabel} aujourd'hui (${date}). Impossible de faire 2 fois le même pointage.`
       });
     }
-    if (!byDevice.empty) {
+    if (byDevice) {
       return res.status(409).json({
         error: `Cet appareil a déjà été utilisé pour un pointage ${typeLabel} aujourd'hui (${date}). Appareil bloqué après le 1er pointage.`
       });
@@ -678,7 +642,7 @@ app.post('/pointer', async (req, res) => {
       lng: longitude,
       distance_m: Math.round(dist)            // ← NOUVEAU: distance vérifiée
     };
-    await col.add(record);
+    await store.insertRecord(record);
 
     // ── Calcul alerte retard / heures supplémentaires ─────────────────────
     let alerte = null;
@@ -730,10 +694,7 @@ app.get('/records', async (req, res) => {
  */
 app.delete('/reset', async (req, res) => {
   try {
-    const snap = await col.get();
-    const batch = db.batch();
-    snap.docs.forEach(d => batch.delete(d.ref));
-    await batch.commit();
+    await store.deleteAllRecords();
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -901,8 +862,7 @@ app.get('/export/excel', async (req, res) => {
  */
 app.get('/alertes', async (req, res) => {
   try {
-    const snap    = await col.get();
-    const records = snap.docs.map(d => d.data());
+    const records = await store.fetchAllRecords();
 
     const retards = [];
     const hsSup   = [];
@@ -1029,8 +989,7 @@ function buildRapportData(records, debut, fin) {
  */
 app.get('/rapports/heures', async (req, res) => {
   try {
-    const snap    = await col.get();
-    const records = snap.docs.map(d => d.data());
+    const records = await store.fetchAllRecords();
     // Retourner toutes les données (debut/fin = min/max du jeu de données)
     const agentMap = {};
     for (const r of records) {
@@ -1071,8 +1030,7 @@ app.get('/export/rapport/pdf', async (req, res) => {
   }
   let agents;
   try {
-    const snap = await col.get();
-    agents = buildRapportData(snap.docs.map(d => d.data()), debut, fin);
+    agents = buildRapportData(await store.fetchAllRecords(), debut, fin);
   } catch { return res.status(500).end(); }
 
   const doc = new PDFDocument({ margin: 40, size: 'A4' });
@@ -1148,8 +1106,7 @@ app.get('/export/rapport/excel', async (req, res) => {
   }
   let agents;
   try {
-    const snap = await col.get();
-    agents = buildRapportData(snap.docs.map(d => d.data()), debut, fin);
+    agents = buildRapportData(await store.fetchAllRecords(), debut, fin);
   } catch { return res.status(500).end(); }
 
   const wb = new ExcelJS.Workbook();
@@ -1281,3 +1238,4 @@ app.listen(PORT, '0.0.0.0', () => {
     console.log(`  Self-ping actif   : ${PING_URL} (toutes les 10 min)\n`);
   }
 });
+

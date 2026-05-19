@@ -4,7 +4,8 @@
   "description": "Système de pointage par QR code — timestamp généré côté serveur",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "migrate:postgres": "node scripts/migrate-firestore-to-postgres.js"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -17,6 +18,7 @@
     "express": "^4.19.2",
     "firebase-admin": "^13.9.0",
     "pdfkit": "^0.18.0",
+    "pg": "^8.13.1",
     "qrcode": "^1.5.4"
   }
 }
