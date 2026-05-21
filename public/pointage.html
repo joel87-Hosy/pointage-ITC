@@ -256,10 +256,13 @@
     // ─── Récupération du token dans l'URL ────────────────────────────────────
     const urlParams = new URLSearchParams(window.location.search);
     let TOKEN = urlParams.get('token');
+    let STATIC_QR = urlParams.get('static');
     // Traiter les valeurs communes invalides comme l'absence de token
     if (TOKEN === 'undefined' || TOKEN === 'null' || TOKEN === '') TOKEN = null;
-    // Si un token est présent mais malformé, le considérer comme absent (mode statique)
-    if (typeof TOKEN === 'string' && !/^[0-9a-f]{16}$/.test(TOKEN)) TOKEN = null;
+    if (STATIC_QR === 'undefined' || STATIC_QR === 'null' || STATIC_QR === '') STATIC_QR = null;
+    // Un lien direct ou un token malforme ne doit jamais afficher le formulaire.
+    const HAS_VALID_TOKEN_FORMAT = typeof TOKEN === 'string' && /^[0-9a-f]{16}$/.test(TOKEN);
+    const HAS_VALID_STATIC_QR_FORMAT = typeof STATIC_QR === 'string' && /^[0-9a-f]{16}$/.test(STATIC_QR);
 
     const form          = document.getElementById('form');
     const btn           = document.getElementById('btn');
@@ -338,6 +341,30 @@
       alertEl.style.display = 'none';
     }
 
+    function applyPointageStatus(status) {
+      const arriveeDone = Boolean(status && status.arriveeDone);
+      const sortieDone = Boolean(status && status.sortieDone);
+
+      btnArr.disabled = arriveeDone;
+      btnSortie.disabled = sortieDone;
+      if (arriveeDone) btnArr.textContent = 'âœ… ArrivÃ©e faite';
+      if (sortieDone) btnSortie.textContent = 'âœ… Sortie faite';
+
+      if (arriveeDone) {
+        selectType('sortie');
+      } else {
+        selectType('arrivee');
+      }
+
+      if (arriveeDone && sortieDone) {
+        btn.disabled = true;
+        btn.textContent = 'Pointages du jour dÃ©jÃ  faits';
+        alertEl.className = 'alert error';
+        alertEl.textContent = 'âŒ Vous avez dÃ©jÃ  effectuÃ© lâ€™arrivÃ©e et la sortie aujourdâ€™hui avec ce tÃ©lÃ©phone.';
+        alertEl.style.display = 'block';
+      }
+    }
+
     function escHtml(str) {
       return String(str)
         .replace(/&/g, '&amp;')
@@ -352,6 +379,11 @@
       alertEl.className     = 'alert error';
       alertEl.textContent   = '❌ ' + msg;
       alertEl.style.display = 'block';
+    }
+
+    function getNavigationType() {
+      const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+      return nav && nav.type ? nav.type : 'navigate';
     }
 
     // ─── Device ID enrichi : inclut des propriétés du navigateur ────────────
@@ -369,12 +401,18 @@
 
     // ─── INITIALISATION SÉCURISÉE : Valider le token et créer une session ────
     async function initializeSession() {
-      // Si aucun token (QR imprimé/statique), autoriser le formulaire sans session.
-      if (!TOKEN) {
-        // Mode QR imprimé : on montre directement le formulaire.
+      const navigationType = getNavigationType();
+
+      // Acces direct, raccourci telephone ou ancien lien expire: refus.
+      if (!HAS_VALID_TOKEN_FORMAT && !HAS_VALID_STATIC_QR_FORMAT) {
         SESSION_ID = null;
-        geoBox.style.display = 'none';
-        form.style.display = 'block';
+        showFatalError("Lien de pointage invalide. Scannez le QR code affiche a l'ecran.");
+        return;
+      }
+
+      if (HAS_VALID_STATIC_QR_FORMAT && navigationType === 'reload') {
+        SESSION_ID = null;
+        showFatalError("Page actualisee depuis un raccourci. Rescannez le QR code statique.");
         return;
       }
 
@@ -387,7 +425,12 @@
         const res = await fetch('/init-session', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: TOKEN })
+          body: JSON.stringify({
+            token: HAS_VALID_TOKEN_FORMAT ? TOKEN : null,
+            static_qr: HAS_VALID_STATIC_QR_FORMAT ? STATIC_QR : null,
+            navigation_type: navigationType,
+            device_id: DEVICE_ID
+          })
         });
 
         const data = await res.json();
@@ -395,9 +438,11 @@
         if (res.ok && data.sessionId) {
           // ✅ Session créée avec succès
           SESSION_ID = data.sessionId;
+          history.replaceState(null, document.title, '/pointage');
+          applyPointageStatus(data);
           geoBox.style.display = 'none';
           form.style.display = 'block';
-          alertEl.style.display = 'none';
+          if (!data.arriveeDone || !data.sortieDone) alertEl.style.display = 'none';
         } else {
           // ❌ Token invalide ou expiré
           showFatalError(data.error || 'QR code invalide. Rescannez le code.');
@@ -428,8 +473,8 @@
       
       if (!nom) return;
 
-      // Si un token était fourni, la session doit exister.
-      if (TOKEN && !SESSION_ID) {
+      // La session courte creee apres scan est obligatoire.
+      if (!SESSION_ID) {
         alertEl.className   = 'alert error';
         alertEl.textContent = '❌ Session expirée. Rescannez le QR code.';
         alertEl.style.display = 'block';

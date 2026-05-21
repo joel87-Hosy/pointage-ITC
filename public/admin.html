@@ -774,6 +774,7 @@
     try {
       const res  = await fetch('/qrcode-static');
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'QR statique indisponible');
       const win  = window.open('', '_blank');
       win.document.write(`<!DOCTYPE html><html lang="fr"><head>
         <meta charset="UTF-8"><title>Affiche de Pointage</title>

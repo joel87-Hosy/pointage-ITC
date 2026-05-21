@@ -97,13 +97,15 @@ const HS_GRACE_MIN         = 60;            // délai supplémentaire après l'h
 
 // Clé secrète HMAC générée au démarrage — inconnue du client
 const HMAC_SECRET = crypto.randomBytes(32).toString('hex');
-
-// Token déjà consommés dans la fenêtre glissante (token → numéro de slot)
-const usedTokens = new Map();
+const STATIC_QR_TOKEN = process.env.STATIC_QR_TOKEN ||
+  crypto.createHash('sha256')
+    .update(`${process.env.APP_URL || 'local'}|pointage-static-v1`)
+    .digest('hex')
+    .slice(0, 16);
 
 // Sessions de pointage actives (sessionId → {createdAt, expiresAt})
-// Durée de vie d'une session : 5 minutes après le scan du QR code
-const SESSION_TTL_MS = 5 * 60 * 1000;
+// Durée de vie d'une session : 2 minutes après le scan du QR code
+const SESSION_TTL_MS = 2 * 60 * 1000;
 const activeSessions = new Map();
 
 function getSlot(tsMs) { return Math.floor(tsMs / TOKEN_TTL_MS); }
@@ -129,15 +131,8 @@ function validateToken(token) {
   const now         = Date.now();
   const currentSlot = getSlot(now);
 
-  // Purge automatique des vieux tokens (>= 2 slots d'ancienneté)
-  for (const [tok, slot] of usedTokens) {
-    if (slot < currentSlot - 1) usedTokens.delete(tok);
-  }
-
   for (const slot of [currentSlot, currentSlot - 1]) {
     if (tokenForSlot(slot) === token) {
-      if (usedTokens.has(token)) return false; // rejeu détecté
-      usedTokens.set(token, slot);
       return true;
     }
   }
@@ -146,7 +141,7 @@ function validateToken(token) {
 
 /**
  * Crée une session de pointage à partir d'un token valide.
- * Retourne un sessionId unique valide pour 5 minutes.
+ * Retourne un sessionId unique valide pour 2 minutes.
  */
 function createSession(token) {
   const sessionId = crypto.randomBytes(16).toString('hex');
@@ -182,6 +177,26 @@ function validateAndConsumeSession(sessionId) {
   // Consommer la session (la supprimer pour éviter la réutilisation)
   activeSessions.delete(sessionId);
   return true;
+}
+
+async function getSuggestedPointageType(deviceId) {
+  const { date } = getServerDateTime();
+  const did = typeof deviceId === 'string' ? deviceId.trim().substring(0, 100) : '';
+  if (!did) {
+    return { suggestedType: 'arrivee', arriveeDone: false, sortieDone: false, date };
+  }
+
+  const [arriveeDone, sortieDone] = await Promise.all([
+    store.hasDuplicateByDevice(did, date, 'arrivee'),
+    store.hasDuplicateByDevice(did, date, 'sortie')
+  ]);
+
+  return {
+    suggestedType: arriveeDone ? 'sortie' : 'arrivee',
+    arriveeDone,
+    sortieDone,
+    date
+  };
 }
 
 /**
@@ -437,7 +452,9 @@ function getServerDateTime() {
 
 // Page de pointage (ouverte par le QR code)
 app.get('/pointage', (_req, res) => {
-  res.setHeader('Cache-Control', 'no-store'); // jamais en cache — le token dans l'URL change toutes les 30s
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
   res.sendFile(path.join(__dirname, 'public', 'pointage.html'));
 });
 
@@ -480,8 +497,31 @@ app.post('/admin-login', (req, res) => {
  * Valide un token QR et crée une session de pointage.
  * Cette session doit être fournie au pointage pour empêcher les raccourcis.
  */
-app.post('/init-session', (req, res) => {
-  const { token } = req.body || {};
+app.post('/init-session', async (req, res) => {
+  const { token, static_qr: staticQr, navigation_type: navigationType, device_id: deviceId } = req.body || {};
+
+  if (staticQr) {
+    if (staticQr !== STATIC_QR_TOKEN) {
+      return res.status(403).json({
+        error: 'QR statique invalide. Scannez le QR code officiel.'
+      });
+    }
+
+    if (navigationType === 'reload') {
+      return res.status(403).json({
+        error: 'Page actualisee depuis un raccourci. Rescannez le QR code statique.'
+      });
+    }
+
+    const sessionId = createSession(staticQr);
+    const status = await getSuggestedPointageType(deviceId);
+    return res.json({
+      success: true,
+      sessionId: sessionId,
+      expiresIn_ms: SESSION_TTL_MS,
+      ...status
+    });
+  }
 
   if (!token) {
     return res.status(400).json({
@@ -495,13 +535,15 @@ app.post('/init-session', (req, res) => {
     });
   }
 
-  // Créer une session valide pour 5 minutes
+  // Créer une session valide pour 2 minutes
   const sessionId = createSession(token);
 
+  const status = await getSuggestedPointageType(deviceId);
   res.json({
     success: true,
     sessionId: sessionId,
-    expiresIn_ms: SESSION_TTL_MS
+    expiresIn_ms: SESSION_TTL_MS,
+    ...status
   });
 });
 
@@ -526,31 +568,16 @@ app.get('/badge-lookup', (req, res) => {
 app.post('/pointer', async (req, res) => {
   let { nom_agent: rawName, code_agent, session_id: sessionId, lat, lng, device_id, type, user_agent, badge_id: badgeId } = req.body || {};
   badgeId = typeof badgeId === 'string' ? badgeId.trim().substring(0, 64) : null;
-  // Log pour debug des pointages sans session (QR statique)
-  if (!sessionId) {
-    console.log('POST /pointer (sans session) — payload:', {
-      badge_id: badgeId || null,
-      nom_agent: rawName ? String(rawName).slice(0,100) : rawName,
-      device_id: device_id || null,
-      ua: user_agent ? String(user_agent).slice(0,120) : null
-    });
-  }
-
   if (!rawName && badgeId) {
     const badge = lookupBadge(badgeId);
     if (badge) rawName = badge.nom_agent;
   }
 
   // ── 0. Validation de la session (OBLIGATOIRE pour empêcher les raccourcis) ─
-  // Note: Sessions are still validated when provided (dynamic QR flow).
-  // For printed/static QR codes we accept missing sessionId to allow
-  // pointage sans scanner un QR dynamique.
-  if (sessionId) {
-    if (!validateAndConsumeSession(sessionId)) {
-      return res.status(403).json({
-        error: 'Session expirée ou invalide. Rescannez le QR code et réessayez.'
-      });
-    }
+  if (!validateAndConsumeSession(sessionId)) {
+    return res.status(403).json({
+      error: 'Session expirée ou invalide. Rescannez le QR code et réessayez.'
+    });
   }
 
   // ── 1. Validation du nom ──────────────────────────────────────────────────
@@ -726,19 +753,19 @@ app.get('/qrcode', async (req, res) => {
 
 /**
  * GET /qrcode-static
- * QR statique sans token ni GPS (pour affiche imprimée).
- * Sécurité : présence physique requise pour voir l'affiche.
+ * QR statique autorise : il ouvre la page avec une marque officielle, puis
+ * la page doit creer une session courte avant de pouvoir pointer.
  */
 app.get('/qrcode-static', async (req, res) => {
-  const url = `${getRequestBaseURL(req)}/pointage`;
+  const url = `${getRequestBaseURL(req)}/pointage?static=${STATIC_QR_TOKEN}`;
   try {
     const dataURL = await QRCode.toDataURL(url, {
       width: 400, margin: 2, errorCorrectionLevel: 'M',
-      color: { dark: '#1b5e20', light: '#ffffff' } // vert = mode affiche
+      color: { dark: '#1b5e20', light: '#ffffff' }
     });
-    res.json({ qrcode: dataURL, url });
+    res.json({ qrcode: dataURL, url, expires_in_ms: SESSION_TTL_MS });
   } catch {
-    res.status(500).json({ error: 'Impossible de générer le QR code statique.' });
+    res.status(500).json({ error: 'Impossible de generer le QR code statique.' });
   }
 });
 

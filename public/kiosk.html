@@ -583,6 +583,7 @@
     try {
       const res  = await fetch('/qrcode-static');
       const data = await res.json();
+      if (!res.ok) return;
       document.getElementById('static-qr-img').src = data.qrcode;
     } catch { /* silencieux */ }
   }
