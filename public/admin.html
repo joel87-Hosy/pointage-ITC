@@ -38,15 +38,45 @@
       grid-template-columns: 310px 1fr;
       gap: 26px;
       align-items: start;
+      height: calc(100vh - 178px);
+      min-height: 460px;
     }
 
-    @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+    @media (max-width: 800px) {
+      .grid {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: 0;
+      }
+    }
 
     .panel {
       background: #fff;
       border-radius: 14px;
       padding: 26px;
       box-shadow: 0 2px 16px rgba(0,0,0,.08);
+    }
+
+    .qr-panel,
+    .records-panel {
+      height: 100%;
+      max-height: 100%;
+      overflow-y: auto;
+    }
+
+    .records-panel {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    @media (max-width: 800px) {
+      .qr-panel,
+      .records-panel {
+        height: auto;
+        max-height: none;
+        overflow-y: visible;
+      }
     }
 
     .panel-title {
@@ -167,9 +197,25 @@
 
     .table-wrap { overflow-x: auto; }
 
+    .records-table-wrap {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      border: 1px solid #eef2f7;
+      border-radius: 10px;
+    }
+
     table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 400px; }
 
     thead tr { background: #e8eaf6; }
+
+    .records-table-wrap thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: #e8eaf6;
+      box-shadow: 0 1px 0 #d7deee;
+    }
 
     th {
       padding: 10px 14px;
@@ -361,7 +407,7 @@
   <div class="grid">
 
     <!-- ─── Panneau QR Code ─────────────────────────────────────────────────── -->
-    <div class="panel">
+    <div class="panel qr-panel">
       <p class="panel-title">&#128241; QR Code de Pointage</p>
       <div id="print-area">
         <img id="qr-img" src="" alt="Chargement du QR code…">
@@ -384,7 +430,7 @@
     </div>
 
     <!-- ─── Panneau Enregistrements ─────────────────────────────────────────── -->
-    <div class="panel">
+    <div class="panel records-panel">
       <p class="panel-title">📊 Registre des Pointages</p>
 
       <div class="toolbar">
@@ -399,7 +445,7 @@
         <span class="badge" id="count">—</span>
       </div>
 
-      <div class="table-wrap">
+      <div class="table-wrap records-table-wrap">
         <table>
           <thead>
             <tr>
