@@ -23,6 +23,8 @@ const ADMIN_USERNAME = process.env.ADMIN_USERNAME || 'admin';
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || null;
 const ADMIN_COOKIE_NAME = 'pointage_admin';
 const ADMIN_COOKIE_MAX_AGE = 24 * 3600; // 1 jour
+const DEVICE_COOKIE_NAME = 'pointage_device_id';
+const DEVICE_COOKIE_MAX_AGE = 400 * 24 * 3600; // 400 jours
 
 if (!ADMIN_PASSWORD) {
   console.warn('  [ADMIN] ADMIN_PASSWORD non défini : accès admin désactivé tant que ce mot de passe n\'est pas configuré.');
@@ -179,9 +181,45 @@ function validateAndConsumeSession(sessionId) {
   return true;
 }
 
+function normalizeDeviceId(deviceId) {
+  if (typeof deviceId !== 'string') return '';
+  const did = deviceId.trim().substring(0, 100);
+  return /^[A-Za-z0-9._:-]{8,100}$/.test(did) ? did : '';
+}
+
+function setDeviceCookie(req, res, deviceId) {
+  const did = normalizeDeviceId(deviceId);
+  if (!did) return;
+
+  const secure = req.secure || req.headers['x-forwarded-proto'] === 'https';
+  const parts = [
+    `${DEVICE_COOKIE_NAME}=${encodeURIComponent(did)}`,
+    `Max-Age=${DEVICE_COOKIE_MAX_AGE}`,
+    'Path=/',
+    'SameSite=Lax',
+    'HttpOnly'
+  ];
+  if (secure) parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function getStableDeviceId(req, res, fallbackDeviceId) {
+  const cookies = parseCookies(req);
+  const fromCookie = normalizeDeviceId(cookies[DEVICE_COOKIE_NAME]);
+  if (fromCookie) {
+    setDeviceCookie(req, res, fromCookie);
+    return fromCookie;
+  }
+
+  const fromBody = normalizeDeviceId(fallbackDeviceId);
+  const generated = fromBody || crypto.randomUUID();
+  setDeviceCookie(req, res, generated);
+  return generated;
+}
+
 async function getSuggestedPointageType(deviceId) {
   const { date } = getServerDateTime();
-  const did = typeof deviceId === 'string' ? deviceId.trim().substring(0, 100) : '';
+  const did = normalizeDeviceId(deviceId);
   if (!did) {
     return { suggestedType: 'arrivee', arriveeDone: false, sortieDone: false, registeredAgent: null, date };
   }
@@ -501,6 +539,7 @@ app.post('/admin-login', (req, res) => {
  */
 app.post('/init-session', async (req, res) => {
   const { token, static_qr: staticQr, navigation_type: navigationType, device_id: deviceId } = req.body || {};
+  const stableDeviceId = getStableDeviceId(req, res, deviceId);
 
   if (staticQr) {
     if (staticQr !== STATIC_QR_TOKEN) {
@@ -516,11 +555,12 @@ app.post('/init-session', async (req, res) => {
     }
 
     const sessionId = createSession(staticQr);
-    const status = await getSuggestedPointageType(deviceId);
+    const status = await getSuggestedPointageType(stableDeviceId);
     return res.json({
       success: true,
       sessionId: sessionId,
       expiresIn_ms: SESSION_TTL_MS,
+      deviceId: stableDeviceId,
       ...status
     });
   }
@@ -540,11 +580,12 @@ app.post('/init-session', async (req, res) => {
   // Créer une session valide pour 2 minutes
   const sessionId = createSession(token);
 
-  const status = await getSuggestedPointageType(deviceId);
+  const status = await getSuggestedPointageType(stableDeviceId);
   res.json({
     success: true,
     sessionId: sessionId,
     expiresIn_ms: SESSION_TTL_MS,
+    deviceId: stableDeviceId,
     ...status
   });
 });
@@ -569,7 +610,7 @@ app.get('/badge-lookup', (req, res) => {
  */
 app.post('/pointer', async (req, res) => {
   let { nom_agent: rawName, code_agent, session_id: sessionId, lat, lng, device_id, type, user_agent, badge_id: badgeId } = req.body || {};
-  const did = typeof device_id === 'string' ? device_id.trim().substring(0, 64) : null;
+  const did = getStableDeviceId(req, res, device_id);
   badgeId = typeof badgeId === 'string' ? badgeId.trim().substring(0, 64) : null;
   if (!rawName && badgeId) {
     const badge = lookupBadge(badgeId);

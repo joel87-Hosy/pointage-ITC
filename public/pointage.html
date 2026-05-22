@@ -436,16 +436,29 @@
 
     // ─── Device ID enrichi : inclut des propriétés du navigateur ────────────
     function getEnrichedDeviceId() {
-      let id = localStorage.getItem('pointage_device_id');
+      let id = null;
+      try {
+        id = localStorage.getItem('pointage_device_id');
+      } catch {}
       if (!id) {
         // Créer un ID unique basé sur crypto + timestamp
         id = (crypto.randomUUID ? crypto.randomUUID() :
           Date.now().toString(36) + Math.random().toString(36).slice(2));
-        localStorage.setItem('pointage_device_id', id);
+        try {
+          localStorage.setItem('pointage_device_id', id);
+        } catch {}
       }
       return id;
     }
-    const DEVICE_ID = getEnrichedDeviceId();
+    let DEVICE_ID = getEnrichedDeviceId();
+
+    function rememberServerDeviceId(deviceId) {
+      if (typeof deviceId !== 'string' || deviceId.length < 8) return;
+      DEVICE_ID = deviceId;
+      try {
+        localStorage.setItem('pointage_device_id', deviceId);
+      } catch {}
+    }
 
     // ─── INITIALISATION SÉCURISÉE : Valider le token et créer une session ────
     async function initializeSession() {
@@ -485,6 +498,7 @@
 
         if (res.ok && data.sessionId) {
           // Session creee avec succes
+          rememberServerDeviceId(data.deviceId);
           SESSION_ID = data.sessionId;
           history.replaceState(null, document.title, '/pointage');
           applyPointageStatus(data);
