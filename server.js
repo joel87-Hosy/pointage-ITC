@@ -183,18 +183,20 @@ async function getSuggestedPointageType(deviceId) {
   const { date } = getServerDateTime();
   const did = typeof deviceId === 'string' ? deviceId.trim().substring(0, 100) : '';
   if (!did) {
-    return { suggestedType: 'arrivee', arriveeDone: false, sortieDone: false, date };
+    return { suggestedType: 'arrivee', arriveeDone: false, sortieDone: false, registeredAgent: null, date };
   }
 
-  const [arriveeDone, sortieDone] = await Promise.all([
+  const [arriveeDone, sortieDone, registeredAgent] = await Promise.all([
     store.hasDuplicateByDevice(did, date, 'arrivee'),
-    store.hasDuplicateByDevice(did, date, 'sortie')
+    store.hasDuplicateByDevice(did, date, 'sortie'),
+    store.getAgentByDevice ? store.getAgentByDevice(did) : null
   ]);
 
   return {
     suggestedType: arriveeDone ? 'sortie' : 'arrivee',
     arriveeDone,
     sortieDone,
+    registeredAgent,
     date
   };
 }
@@ -567,6 +569,7 @@ app.get('/badge-lookup', (req, res) => {
  */
 app.post('/pointer', async (req, res) => {
   let { nom_agent: rawName, code_agent, session_id: sessionId, lat, lng, device_id, type, user_agent, badge_id: badgeId } = req.body || {};
+  const did = typeof device_id === 'string' ? device_id.trim().substring(0, 64) : null;
   badgeId = typeof badgeId === 'string' ? badgeId.trim().substring(0, 64) : null;
   if (!rawName && badgeId) {
     const badge = lookupBadge(badgeId);
@@ -581,6 +584,19 @@ app.post('/pointer', async (req, res) => {
   }
 
   // ── 1. Validation du nom ──────────────────────────────────────────────────
+  let registeredAgent = null;
+  try {
+    registeredAgent = did && store.getAgentByDevice
+      ? await store.getAgentByDevice(did)
+      : null;
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: 'Erreur serveur lors de la verification du telephone.' });
+  }
+  if (registeredAgent && registeredAgent.nom_agent) {
+    rawName = registeredAgent.nom_agent;
+  }
+
   if (typeof rawName !== 'string' || rawName.trim().length === 0) {
     return res.status(400).json({ error: "Le nom de l'agent est requis." });
   }
@@ -628,7 +644,6 @@ app.post('/pointer', async (req, res) => {
   const nomNormalise = normalizeName(rawName);
   const nomAffiche = rawName.trim().substring(0, 100); // nom original pour affichage
   const { date, heure } = getServerDateTime();
-  const did = typeof device_id === 'string' ? device_id.substring(0, 64) : null;
   const ua = typeof user_agent === 'string' ? user_agent.substring(0, 255) : 'inconnu';
 
   if (nomNormalise.length === 0) {

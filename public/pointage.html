@@ -194,6 +194,21 @@
     .geo-status.ok  { background: #e8f5e9; border-color: #a5d6a7; color: #1b5e20; }
     .geo-status.err { background: #ffebee; border-color: #ef9a9a; color: #b71c1c; }
 
+    .known-agent {
+      display: none;
+      text-align: left;
+      margin-bottom: 20px;
+      padding: 12px 14px;
+      border-radius: 10px;
+      background: #e8f5e9;
+      border: 1px solid #a5d6a7;
+      color: #1b5e20;
+      font-size: 13.5px;
+      line-height: 1.5;
+    }
+
+    .known-agent strong { display: block; font-size: 15px; }
+
     /* spinner */
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner {
@@ -226,7 +241,9 @@
         <button type="button" id="btn-sortie"  class="type-btn" onclick="selectType('sortie')">🔴 Sortie</button>
       </div>
 
-      <label for="nom">Nom Complet</label>
+      <div id="known-agent" class="known-agent"></div>
+
+      <label id="nom-label" for="nom">Nom Complet</label>
       <input
         id="nom"
         type="text"
@@ -271,11 +288,16 @@
     const btnArr        = document.getElementById('btn-arrivee');
     const btnSortie     = document.getElementById('btn-sortie');
     const badgeIdHidden = document.getElementById('badge-id-hidden');
+    const nomInput      = document.getElementById('nom');
+    const nomLabel      = document.getElementById('nom-label');
+    const codeInput     = document.getElementById('code');
+    const knownAgentBox = document.getElementById('known-agent');
 
     let userLat      = null;
     let userLng      = null;
     let selectedType = 'arrivee'; // type actif
     let SESSION_ID   = null; // sessionId créée après validation du token
+    let REGISTERED_AGENT = null;
 
     function selectScanMode() {
       initializeSession();
@@ -365,6 +387,32 @@
       }
     }
 
+    function applyRegisteredAgent(agent) {
+      REGISTERED_AGENT = agent && agent.nom_agent ? agent : null;
+
+      if (REGISTERED_AGENT) {
+        nomInput.value = REGISTERED_AGENT.nom_agent;
+        nomInput.required = false;
+        nomInput.style.display = 'none';
+        nomLabel.style.display = 'none';
+        codeInput.value = '';
+        codeInput.style.display = 'none';
+        codeInput.previousElementSibling.style.display = 'none';
+        knownAgentBox.innerHTML =
+          'Telephone reconnu<br><strong>' + escHtml(REGISTERED_AGENT.nom_agent) + '</strong>';
+        knownAgentBox.style.display = 'block';
+        return;
+      }
+
+      nomInput.required = true;
+      nomInput.style.display = '';
+      nomLabel.style.display = '';
+      codeInput.style.display = '';
+      codeInput.previousElementSibling.style.display = '';
+      knownAgentBox.style.display = 'none';
+      knownAgentBox.textContent = '';
+    }
+
     function escHtml(str) {
       return String(str)
         .replace(/&/g, '&amp;')
@@ -440,6 +488,7 @@
           SESSION_ID = data.sessionId;
           history.replaceState(null, document.title, '/pointage');
           applyPointageStatus(data);
+          applyRegisteredAgent(data.registeredAgent);
           geoBox.style.display = 'none';
           form.style.display = 'block';
           if (!data.arriveeDone || !data.sortieDone) alertEl.style.display = 'none';
@@ -468,8 +517,8 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      const nom = document.getElementById('nom').value.trim();
-      const codeAgent = document.getElementById('code').value.trim() || null;
+      const nom = REGISTERED_AGENT ? REGISTERED_AGENT.nom_agent : nomInput.value.trim();
+      const codeAgent = REGISTERED_AGENT ? null : (codeInput.value.trim() || null);
       
       if (!nom) return;
 
@@ -541,8 +590,8 @@
             btnSortie.textContent = '✅ Sortie faite';
           }
 
-          document.getElementById('nom').value = '';
-          document.getElementById('code').value = '';
+          if (!REGISTERED_AGENT) nomInput.value = '';
+          codeInput.value = '';
           
           // Effacer le sessionId pour forcer un nouveau scan du QR code
           SESSION_ID = null;

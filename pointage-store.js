@@ -86,6 +86,25 @@ function createFirestoreStore() {
       return !snap.empty;
     },
 
+    async getAgentByDevice(deviceId) {
+      if (!deviceId) return null;
+      const snap = await col
+        .where('device_id', '==', deviceId)
+        .limit(100)
+        .get();
+      if (snap.empty) return null;
+
+      const rows = toFirestoreRows(snap)
+        .filter(r => r.nom_agent)
+        .sort((a, b) => (a.id || 0) - (b.id || 0));
+      if (!rows.length) return null;
+
+      return {
+        nom_agent: rows[0].nom_agent,
+        nom_normalise: rows[0].nom_normalise || null
+      };
+    },
+
     async insertRecord(record) {
       await col.add(record);
     },
@@ -192,6 +211,22 @@ function createPostgresStore() {
         [deviceId, date, type]
       );
       return result.rowCount > 0;
+    },
+
+    async getAgentByDevice(deviceId) {
+      if (!deviceId) return null;
+      await ensureSchema();
+      const result = await pool.query(
+        `SELECT nom_agent, nom_normalise
+         FROM pointages
+         WHERE device_id = $1
+           AND nom_agent IS NOT NULL
+           AND nom_agent <> ''
+         ORDER BY id ASC
+         LIMIT 1`,
+        [deviceId]
+      );
+      return result.rows[0] || null;
     },
 
     async insertRecord(record) {
