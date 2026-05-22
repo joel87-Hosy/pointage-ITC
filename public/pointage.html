@@ -64,7 +64,7 @@
 
     input[type="text"]:focus { border-color: #0d47a1; }
 
-    /* ── Toggle Arrivée / Sortie ── */
+    /* Toggle Arrivee / Sortie */
     .type-toggle {
       display: flex;
       gap: 10px;
@@ -177,7 +177,7 @@
       border: 1px solid #ef9a9a;
     }
 
-    /* ── État GPS ── */
+    /* Etat GPS */
     .geo-status {
       display: flex;
       align-items: center;
@@ -225,19 +225,19 @@
   <div class="card">
     <div class="icon">&#128203;</div>
     <h1>Pointage des Agents</h1>
-    <p class="subtitle">Sélectionnez le type de pointage puis entrez votre nom</p>
+    <p class="subtitle">Selectionnez le type de pointage puis entrez votre nom</p>
 
     <!-- Statut GPS -->
     <div id="geo-box" class="geo-status">
       <div class="spinner"></div>
-      <span>Localisation GPS en cours…</span>
+      <span>Localisation GPS en cours...</span>
     </div>
 
     <form id="form" autocomplete="off" novalidate style="display:none">
       <input type="hidden" id="badge-id-hidden" name="badge_id" value="" />
-      <!-- Toggle Arrivée / Sortie -->
+      <!-- Toggle Arrivee / Sortie -->
       <div class="type-toggle">
-        <button type="button" id="btn-arrivee" class="type-btn active-arrivee" onclick="selectType('arrivee')">🟢 Arrivée</button>
+        <button type="button" id="btn-arrivee" class="type-btn active-arrivee" onclick="selectType('arrivee')">🟢 Arrivee</button>
         <button type="button" id="btn-sortie"  class="type-btn" onclick="selectType('sortie')">🔴 Sortie</button>
       </div>
 
@@ -261,7 +261,7 @@
         autocomplete="off"
       >
 
-      <button id="btn" type="submit">✅ Valider le Pointage Arrivée</button>
+      <button id="btn" type="submit">✅ Valider le Pointage Arrivee</button>
     </form>
 
     <div id="alert" class="alert" role="alert" aria-live="polite"></div>
@@ -296,7 +296,7 @@
     let userLat      = null;
     let userLng      = null;
     let selectedType = 'arrivee'; // type actif
-    let SESSION_ID   = null; // sessionId créée après validation du token
+    let SESSION_ID   = null; // sessionId creee apres validation du token
     let REGISTERED_AGENT = null;
 
     function selectScanMode() {
@@ -351,7 +351,7 @@
       if (type === 'arrivee') {
         btnArr.className    = 'type-btn active-arrivee';
         btnSortie.className = 'type-btn';
-        btn.textContent     = '✅ Valider le Pointage Arrivée';
+        btn.textContent     = '✅ Valider le Pointage Arrivee';
         btn.style.background = '#1b5e20';
       } else {
         btnArr.className    = 'type-btn';
@@ -369,8 +369,8 @@
 
       btnArr.disabled = arriveeDone;
       btnSortie.disabled = sortieDone;
-      if (arriveeDone) btnArr.textContent = 'âœ… ArrivÃ©e faite';
-      if (sortieDone) btnSortie.textContent = 'âœ… Sortie faite';
+      if (arriveeDone) btnArr.textContent = '✅ Arrivee faite';
+      if (sortieDone) btnSortie.textContent = '✅ Sortie faite';
 
       if (arriveeDone) {
         selectType('sortie');
@@ -380,9 +380,9 @@
 
       if (arriveeDone && sortieDone) {
         btn.disabled = true;
-        btn.textContent = 'Pointages du jour dÃ©jÃ  faits';
+        btn.textContent = 'Pointages du jour deja faits';
         alertEl.className = 'alert error';
-        alertEl.textContent = 'âŒ Vous avez dÃ©jÃ  effectuÃ© lâ€™arrivÃ©e et la sortie aujourdâ€™hui avec ce tÃ©lÃ©phone.';
+        alertEl.textContent = '❌ Vous avez deja effectue l arrivee et la sortie aujourd hui avec ce telephone.';
         alertEl.style.display = 'block';
       }
     }
@@ -464,7 +464,7 @@
         return;
       }
 
-      geoBox.innerHTML = '<div class="spinner"></div><span>Vérification du QR code…</span>';
+      geoBox.innerHTML = '<div class="spinner"></div><span>Verification du QR code...</span>';
       geoBox.style.display = 'block';
       form.style.display = 'none';
 
@@ -484,7 +484,7 @@
         const data = await res.json();
 
         if (res.ok && data.sessionId) {
-          // ✅ Session créée avec succès
+          // Session creee avec succes
           SESSION_ID = data.sessionId;
           history.replaceState(null, document.title, '/pointage');
           applyPointageStatus(data);
@@ -493,27 +493,27 @@
           form.style.display = 'block';
           if (!data.arriveeDone || !data.sortieDone) alertEl.style.display = 'none';
         } else {
-          // ❌ Token invalide ou expiré
+          // Token invalide ou expire
           showFatalError(data.error || 'QR code invalide. Rescannez le code.');
         }
       } catch (err) {
-        showFatalError('Impossible de valider le QR code. Vérifiez votre connexion.');
+        showFatalError('Impossible de valider le QR code. Verifiez votre connexion.');
       }
     }
 
-    // Tentative GPS en arrière-plan
+    // Tentative GPS en arriere-plan
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           userLat = pos.coords.latitude;
           userLng = pos.coords.longitude;
         },
-        () => { /* GPS non disponible — silencieux */ },
+        () => { /* GPS non disponible - silencieux */ },
         { enableHighAccuracy: false, timeout: 5000, maximumAge: 60000 }
       );
     }
 
-    // ─── Soumission du formulaire ─────────────────────────────────────────────
+    // Soumission du formulaire
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
 
@@ -525,13 +525,13 @@
       // La session courte creee apres scan est obligatoire.
       if (!SESSION_ID) {
         alertEl.className   = 'alert error';
-        alertEl.textContent = '❌ Session expirée. Rescannez le QR code.';
+        alertEl.textContent = '❌ Session expiree. Rescannez le QR code.';
         alertEl.style.display = 'block';
         return;
       }
 
       btn.disabled          = true;
-      btn.textContent       = 'Enregistrement…';
+      btn.textContent       = 'Enregistrement...';
       alertEl.style.display = 'none';
 
       try {
@@ -554,13 +554,12 @@
 
         if (res.ok) {
           const isArrivee  = data.type !== 'sortie';
-          const typeLabel  = isArrivee ? 'Arrivée' : 'Sortie';
-          const typeEmoji  = isArrivee ? '🟢' : '🔴';
+          const typeLabel  = isArrivee ? 'Arrivee' : 'Sortie';
 
           // Message principal
           let html =
-            `<strong>✅ Pointage ${typeLabel} enregistré !</strong><br>` +
-            `${typeEmoji} Agent : <strong>${escHtml(data.nom_agent)}</strong><br>` +
+            `<strong>✅ Pointage ${typeLabel} enregistre !</strong><br>` +
+            `${isArrivee ? '🟢' : '🔴'} Agent : <strong>${escHtml(data.nom_agent)}</strong><br>` +
             `📅 Date  : <strong>${data.date}</strong><br>` +
             `🕐 Heure : <strong>${data.heure}</strong>`;
 
@@ -581,10 +580,10 @@
           const todayKey = 'pointage_' + selectedType + '_done_' + new Date().toLocaleDateString('fr-FR');
           localStorage.setItem(todayKey, '1');
 
-          // Masquer le bouton du type déjà effectué
+          // Masquer le bouton du type deja effectue
           if (isArrivee) {
             btnArr.disabled    = true;
-            btnArr.textContent = '✅ Arrivée faite';
+            btnArr.textContent = '✅ Arrivee faite';
           } else {
             btnSortie.disabled    = true;
             btnSortie.textContent = '✅ Sortie faite';
@@ -601,12 +600,12 @@
         }
       } catch {
         alertEl.className   = 'alert error';
-        alertEl.textContent = '❌ Impossible de joindre le serveur. Vérifiez votre connexion.';
+        alertEl.textContent = '❌ Impossible de joindre le serveur. Verifiez votre connexion.';
       }
 
       alertEl.style.display = 'block';
       btn.disabled    = false;
-      const currentLabel = selectedType === 'arrivee' ? '✅ Valider le Pointage Arrivée' : '✅ Valider le Pointage Sortie';
+      const currentLabel = selectedType === 'arrivee' ? '✅ Valider le Pointage Arrivee' : '✅ Valider le Pointage Sortie';
       btn.textContent = currentLabel;
     });
 

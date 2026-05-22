@@ -694,14 +694,14 @@ app.post('/pointer', async (req, res) => {
       alerte = {
         type: 'retard',
         minutes: retardMin,
-        message: `⚠️ Retard de ${fmtMin(retardMin)} — Arrivée à ${heure} (début prévu : 08h00).`
+        message: `⚠️ Retard de ${fmtMin(retardMin)} - Arrivee a ${heure} (debut prevu : 08h00).`
       };
     } else if (pointageType === 'sortie' && heureMin > getDayEndThresholdMinutes(date)) {
       const hsMin = heureMin - getDayEndMinutes(date);
       alerte = {
         type: 'heures_sup',
         minutes: hsMin,
-        message: `ℹ️ Heures supplémentaires : +${fmtMin(hsMin)} — Sortie à ${heure} (fin prévue : ${formatDayEnd(date)}).`
+        message: `ℹ️ Heures supplementaires : +${fmtMin(hsMin)} - Sortie a ${heure} (fin prevue : ${formatDayEnd(date)}).`
       };
     }
 
