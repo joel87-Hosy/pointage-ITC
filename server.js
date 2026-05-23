@@ -217,24 +217,38 @@ function getStableDeviceId(req, res, fallbackDeviceId) {
   return generated;
 }
 
-async function getSuggestedPointageType(deviceId) {
+async function getSuggestedPointageType(deviceId, knownAgentName) {
   const { date } = getServerDateTime();
   const did = normalizeDeviceId(deviceId);
-  if (!did) {
+  const knownName = typeof knownAgentName === 'string' ? knownAgentName.trim().substring(0, 100) : '';
+  const knownNameNormalise = normalizeName(knownName);
+  if (!did && !knownNameNormalise) {
     return { suggestedType: 'arrivee', arriveeDone: false, sortieDone: false, registeredAgent: null, date };
   }
 
-  const [arriveeDone, sortieDone, registeredAgent] = await Promise.all([
-    store.hasDuplicateByDevice(did, date, 'arrivee'),
-    store.hasDuplicateByDevice(did, date, 'sortie'),
+  const [
+    arriveeDoneByDevice,
+    sortieDoneByDevice,
+    arriveeDoneByName,
+    sortieDoneByName,
+    registeredAgent
+  ] = await Promise.all([
+    did ? store.hasDuplicateByDevice(did, date, 'arrivee') : false,
+    did ? store.hasDuplicateByDevice(did, date, 'sortie') : false,
+    knownNameNormalise ? store.hasDuplicateByName(knownNameNormalise, date, 'arrivee') : false,
+    knownNameNormalise ? store.hasDuplicateByName(knownNameNormalise, date, 'sortie') : false,
     store.getAgentByDevice ? store.getAgentByDevice(did) : null
   ]);
+
+  const arriveeDone = arriveeDoneByDevice || arriveeDoneByName;
+  const sortieDone = sortieDoneByDevice || sortieDoneByName;
+  const agent = registeredAgent || (knownName ? { nom_agent: knownName, nom_normalise: knownNameNormalise } : null);
 
   return {
     suggestedType: arriveeDone ? 'sortie' : 'arrivee',
     arriveeDone,
     sortieDone,
-    registeredAgent,
+    registeredAgent: agent,
     date
   };
 }
@@ -538,7 +552,13 @@ app.post('/admin-login', (req, res) => {
  * Cette session doit être fournie au pointage pour empêcher les raccourcis.
  */
 app.post('/init-session', async (req, res) => {
-  const { token, static_qr: staticQr, navigation_type: navigationType, device_id: deviceId } = req.body || {};
+  const {
+    token,
+    static_qr: staticQr,
+    navigation_type: navigationType,
+    device_id: deviceId,
+    known_agent_name: knownAgentName
+  } = req.body || {};
   const stableDeviceId = getStableDeviceId(req, res, deviceId);
 
   if (staticQr) {
@@ -555,7 +575,7 @@ app.post('/init-session', async (req, res) => {
     }
 
     const sessionId = createSession(staticQr);
-    const status = await getSuggestedPointageType(stableDeviceId);
+    const status = await getSuggestedPointageType(stableDeviceId, knownAgentName);
     return res.json({
       success: true,
       sessionId: sessionId,
@@ -580,7 +600,7 @@ app.post('/init-session', async (req, res) => {
   // Créer une session valide pour 2 minutes
   const sessionId = createSession(token);
 
-  const status = await getSuggestedPointageType(stableDeviceId);
+  const status = await getSuggestedPointageType(stableDeviceId, knownAgentName);
   res.json({
     success: true,
     sessionId: sessionId,

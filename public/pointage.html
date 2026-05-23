@@ -460,6 +460,22 @@
       } catch {}
     }
 
+    function rememberLocalAgentName(name) {
+      if (typeof name !== 'string' || !name.trim()) return;
+      try {
+        localStorage.setItem('pointage_agent_name', name.trim().substring(0, 100));
+      } catch {}
+    }
+
+    function getLocalAgentName() {
+      try {
+        const name = localStorage.getItem('pointage_agent_name');
+        return typeof name === 'string' && name.trim() ? name.trim().substring(0, 100) : null;
+      } catch {
+        return null;
+      }
+    }
+
     // ─── INITIALISATION SÉCURISÉE : Valider le token et créer une session ────
     async function initializeSession() {
       const navigationType = getNavigationType();
@@ -490,7 +506,8 @@
             token: HAS_VALID_TOKEN_FORMAT ? TOKEN : null,
             static_qr: HAS_VALID_STATIC_QR_FORMAT ? STATIC_QR : null,
             navigation_type: navigationType,
-            device_id: DEVICE_ID
+            device_id: DEVICE_ID,
+            known_agent_name: getLocalAgentName()
           })
         });
 
@@ -502,7 +519,13 @@
           SESSION_ID = data.sessionId;
           history.replaceState(null, document.title, '/pointage');
           applyPointageStatus(data);
-          applyRegisteredAgent(data.registeredAgent);
+          if (data.registeredAgent && data.registeredAgent.nom_agent) {
+            rememberLocalAgentName(data.registeredAgent.nom_agent);
+            applyRegisteredAgent(data.registeredAgent);
+          } else {
+            const localAgentName = getLocalAgentName();
+            applyRegisteredAgent(localAgentName ? { nom_agent: localAgentName } : null);
+          }
           geoBox.style.display = 'none';
           form.style.display = 'block';
           if (!data.arriveeDone || !data.sortieDone) alertEl.style.display = 'none';
@@ -589,6 +612,7 @@
 
           alertEl.className = 'alert success';
           alertEl.innerHTML = html;
+          rememberLocalAgentName(data.nom_agent);
 
           // Verrou local par type pour cet appareil aujourd'hui
           const todayKey = 'pointage_' + selectedType + '_done_' + new Date().toLocaleDateString('fr-FR');
