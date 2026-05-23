@@ -236,6 +236,67 @@
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #f5f7ff; }
 
+    .agent-link {
+      border: none;
+      background: transparent;
+      color: #0d47a1;
+      font: inherit;
+      font-weight: 800;
+      cursor: pointer;
+      padding: 0;
+      text-align: left;
+    }
+
+    .agent-link:hover { text-decoration: underline; }
+
+    .record-detail-row td {
+      background: #f8fafc;
+      padding: 0;
+    }
+
+    .record-detail-box {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(180px, 1fr));
+      gap: 12px 18px;
+      padding: 16px;
+      border-left: 4px solid #0d47a1;
+    }
+
+    .record-detail-item span {
+      display: block;
+      color: #607d8b;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: .4px;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+
+    .record-detail-item strong {
+      color: #263238;
+      font-size: 13px;
+      word-break: break-word;
+    }
+
+    .delete-record-btn {
+      align-self: end;
+      justify-self: start;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 7px;
+      background: #c0392b;
+      color: #fff;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .delete-record-btn:hover { background: #a93226; }
+
+    @media (max-width: 700px) {
+      .record-detail-box { grid-template-columns: 1fr; }
+    }
+
     .empty {
       text-align: center;
       color: #aaa;
@@ -641,6 +702,7 @@
 
   let currentRecords = [];
   let activeFilter   = null; // filtre de date actif (YYYY-MM-DD ou null)
+  let expandedRecordId = null;
 
   let countdownTimer = null; // intervalle du compte à rebours
   let refreshTimer   = null; // timeout de rechargement du QR
@@ -744,14 +806,70 @@
       const badge = isArrivee
         ? `<span style="background:#e8f5e9;color:#1b5e20;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">🟢 Arrivée</span>`
         : `<span style="background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">🔴 Sortie</span>`;
-      return `<tr>
+      const recordId = Number(r.id);
+      const mainRow = `<tr>
         <td>${r.id}</td>
-        <td><strong>${escHtml(r.nom_agent)}</strong></td>
+        <td><button class="agent-link" onclick="toggleRecordDetails(${Number(r.id)})">${escHtml(r.nom_agent)}</button></td>
         <td>${badge}</td>
         <td>${escHtml(r.date)}</td>
         <td>${escHtml(r.heure)}</td>
       </tr>`;
+      return mainRow + (expandedRecordId === recordId ? renderRecordDetails(r) : '');
     }).join('');
+  }
+
+  // ─── Detail et suppression d'un pointage ───────────────────────────────────
+  function toggleRecordDetails(id) {
+    expandedRecordId = expandedRecordId === id ? null : id;
+    renderTable(currentRecords);
+  }
+
+  function renderRecordDetails(r) {
+    const typeLabel = r.type === 'sortie' ? 'Sortie' : 'Arrivee';
+    const phoneId = r.device_id || 'inconnu';
+    const badgeId = r.badge_id || 'non-fourni';
+    const location = (r.lat !== null && r.lat !== undefined && r.lng !== null && r.lng !== undefined)
+      ? `${r.lat}, ${r.lng}`
+      : 'non fournie';
+    const distance = (r.distance_m !== null && r.distance_m !== undefined) ? `${r.distance_m} m` : 'non calculee';
+    const ua = r.user_agent || 'inconnu';
+
+    return `<tr class="record-detail-row">
+      <td colspan="5">
+        <div class="record-detail-box">
+          <div class="record-detail-item"><span>Type de pointage</span><strong>${escHtml(typeLabel)}</strong></div>
+          <div class="record-detail-item"><span>ID telephone</span><strong>${escHtml(phoneId)}</strong></div>
+          <div class="record-detail-item"><span>Badge</span><strong>${escHtml(badgeId)}</strong></div>
+          <div class="record-detail-item"><span>Position</span><strong>${escHtml(location)}</strong></div>
+          <div class="record-detail-item"><span>Distance bureau</span><strong>${escHtml(distance)}</strong></div>
+          <div class="record-detail-item"><span>Navigateur</span><strong>${escHtml(ua)}</strong></div>
+          <button class="delete-record-btn" onclick="deletePointage(${Number(r.id)})">Supprimer ce pointage</button>
+        </div>
+      </td>
+    </tr>`;
+  }
+
+  async function deletePointage(id) {
+    const record = currentRecords.find(r => Number(r.id) === Number(id));
+    if (!record) return;
+
+    const typeLabel = record.type === 'sortie' ? 'sortie' : 'arrivee';
+    if (!confirm(`Supprimer le pointage ${typeLabel} de ${record.nom_agent} du ${record.date} a ${record.heure} ?`)) return;
+
+    try {
+      const res = await fetch(`/records/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || 'Erreur lors de la suppression du pointage.');
+        return;
+      }
+
+      currentRecords = currentRecords.filter(r => Number(r.id) !== Number(id));
+      expandedRecordId = null;
+      renderTable(currentRecords);
+    } catch {
+      alert('Impossible de joindre le serveur pour supprimer ce pointage.');
+    }
   }
 
   // ─── Export CSV ────────────────────────────────────────────────────────────

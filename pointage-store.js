@@ -109,6 +109,15 @@ function createFirestoreStore() {
       await col.add(record);
     },
 
+    async deleteRecordById(id) {
+      const snap = await col.where('id', '==', id).limit(20).get();
+      if (snap.empty) return false;
+      const batch = db.batch();
+      snap.docs.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      return true;
+    },
+
     async deleteAllRecords() {
       const snap = await col.get();
       const batch = db.batch();
@@ -252,6 +261,12 @@ function createPostgresStore() {
           record.distance_m
         ]
       );
+    },
+
+    async deleteRecordById(id) {
+      await ensureSchema();
+      const result = await pool.query('DELETE FROM pointages WHERE id = $1', [id]);
+      return result.rowCount > 0;
     },
 
     async deleteAllRecords() {

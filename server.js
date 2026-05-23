@@ -390,6 +390,8 @@ function requireAdminAuth(req, res, next) {
 }
 
 function isAdminProtectedPath(pathname) {
+  if (pathname.startsWith('/records/')) return true;
+
   return [
     '/admin',
     '/admin.html',
@@ -792,8 +794,30 @@ app.get('/records', async (req, res) => {
 });
 
 /**
+ * DELETE /records/:id
+ * Supprime un pointage precis pour permettre une correction admin.
+ */
+app.delete('/records/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: 'ID de pointage invalide.' });
+  }
+
+  try {
+    const deleted = await store.deleteRecordById(id);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Pointage introuvable.' });
+    }
+    res.json({ success: true, id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Erreur lors de la suppression du pointage.' });
+  }
+});
+
+/**
  * DELETE /reset
- * Réinitialise la liste des pointages.
+ * Reinitialise la liste des pointages.
  */
 app.delete('/reset', async (req, res) => {
   try {
