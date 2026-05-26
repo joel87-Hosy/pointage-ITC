@@ -236,6 +236,16 @@
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: #f5f7ff; }
 
+    .record-main-row td {
+      transition: background .2s ease, box-shadow .2s ease;
+    }
+
+    .record-main-row.is-expanded td {
+      background: #eef5ff;
+      border-bottom-color: #d6e6fb;
+      box-shadow: inset 0 1px 0 #dbeafe;
+    }
+
     .agent-link {
       border: none;
       background: transparent;
@@ -243,55 +253,147 @@
       font: inherit;
       font-weight: 800;
       cursor: pointer;
-      padding: 0;
+      padding: 6px 8px;
       text-align: left;
+      border-radius: 8px;
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      max-width: 100%;
+      transition: background .2s ease, color .2s ease;
     }
 
-    .agent-link:hover { text-decoration: underline; }
+    .agent-link::before {
+      content: "›";
+      width: 18px;
+      height: 18px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 18px;
+      border-radius: 50%;
+      background: #e3f2fd;
+      color: #1565c0;
+      font-size: 18px;
+      line-height: 1;
+      transform: rotate(0deg);
+      transition: transform .2s ease, background .2s ease, color .2s ease;
+    }
+
+    .agent-link:hover {
+      background: #eaf3ff;
+      color: #083a85;
+      text-decoration: none;
+    }
+
+    .agent-link.is-open::before {
+      transform: rotate(90deg);
+      background: #0d47a1;
+      color: #fff;
+    }
+
+    .agent-link-name {
+      overflow-wrap: anywhere;
+    }
 
     .record-detail-row td {
-      background: #f8fafc;
-      padding: 0;
+      background: linear-gradient(135deg, #eef5ff 0%, #f8fbff 44%, #fff7ed 100%);
+      padding: 0 14px 14px;
     }
 
     .record-detail-box {
       display: grid;
-      grid-template-columns: repeat(2, minmax(180px, 1fr));
-      gap: 12px 18px;
+      grid-template-columns: repeat(3, minmax(160px, 1fr));
+      gap: 10px;
       padding: 16px;
-      border-left: 4px solid #0d47a1;
+      border: 1px solid #cfe3ff;
+      border-top: none;
+      border-radius: 0 0 10px 10px;
+      background:
+        radial-gradient(circle at 12% 0%, rgba(13,71,161,.14), transparent 28%),
+        radial-gradient(circle at 95% 18%, rgba(245,124,0,.15), transparent 24%),
+        linear-gradient(135deg, rgba(255,255,255,.86), rgba(246,250,255,.96));
+      box-shadow: inset 4px 0 0 #0d47a1, 0 10px 26px rgba(13,71,161,.12);
+      animation: detailOpen .18s ease-out;
     }
+
+    @keyframes detailOpen {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .record-detail-item {
+      min-width: 0;
+      padding: 11px 12px;
+      background: #fff;
+      border: 1px solid rgba(226,232,240,.9);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(15,23,42,.05);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .record-detail-item::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: 4px;
+      background: #0d47a1;
+    }
+
+    .record-detail-item:nth-child(1)::before { background: #2e7d32; }
+    .record-detail-item:nth-child(2)::before { background: #1565c0; }
+    .record-detail-item:nth-child(3)::before { background: #6a1b9a; }
+    .record-detail-item:nth-child(4)::before { background: #ef6c00; }
+    .record-detail-item:nth-child(5)::before { background: #00897b; }
+    .record-detail-item:nth-child(6)::before { background: #c2185b; }
+
+    .record-detail-item:nth-child(1) { background: #f1f8e9; }
+    .record-detail-item:nth-child(2) { background: #e3f2fd; }
+    .record-detail-item:nth-child(3) { background: #f3e5f5; }
+    .record-detail-item:nth-child(4) { background: #fff3e0; }
+    .record-detail-item:nth-child(5) { background: #e0f2f1; }
+    .record-detail-item:nth-child(6) { background: #fce4ec; }
 
     .record-detail-item span {
       display: block;
-      color: #607d8b;
+      color: #475569;
       font-size: 10px;
       font-weight: 800;
       letter-spacing: .4px;
       text-transform: uppercase;
       margin-bottom: 3px;
+      padding-left: 4px;
     }
 
     .record-detail-item strong {
-      color: #263238;
+      color: #172033;
       font-size: 13px;
       word-break: break-word;
+      line-height: 1.35;
+      padding-left: 4px;
+      display: block;
     }
 
     .delete-record-btn {
-      align-self: end;
-      justify-self: start;
-      padding: 8px 12px;
-      border: none;
-      border-radius: 7px;
+      align-self: stretch;
+      justify-self: stretch;
+      padding: 10px 12px;
+      border: 1px solid #ffcdd2;
+      border-radius: 8px;
       background: #c0392b;
       color: #fff;
       cursor: pointer;
       font-size: 12px;
       font-weight: 800;
+      transition: background .2s ease, transform .2s ease, box-shadow .2s ease;
     }
 
-    .delete-record-btn:hover { background: #a93226; }
+    .delete-record-btn:hover {
+      background: #a93226;
+      box-shadow: 0 6px 14px rgba(192,57,43,.2);
+      transform: translateY(-1px);
+    }
 
     @media (max-width: 700px) {
       .record-detail-box { grid-template-columns: 1fr; }
@@ -807,14 +909,15 @@
         ? `<span style="background:#e8f5e9;color:#1b5e20;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">🟢 Arrivée</span>`
         : `<span style="background:#fff3e0;color:#e65100;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;">🔴 Sortie</span>`;
       const recordId = Number(r.id);
-      const mainRow = `<tr>
+      const isExpanded = expandedRecordId === recordId;
+      const mainRow = `<tr class="record-main-row${isExpanded ? ' is-expanded' : ''}">
         <td>${r.id}</td>
-        <td><button class="agent-link" onclick="toggleRecordDetails(${Number(r.id)})">${escHtml(r.nom_agent)}</button></td>
+        <td><button class="agent-link${isExpanded ? ' is-open' : ''}" onclick="toggleRecordDetails(${recordId})" aria-expanded="${isExpanded ? 'true' : 'false'}"><span class="agent-link-name">${escHtml(r.nom_agent)}</span></button></td>
         <td>${badge}</td>
         <td>${escHtml(r.date)}</td>
         <td>${escHtml(r.heure)}</td>
       </tr>`;
-      return mainRow + (expandedRecordId === recordId ? renderRecordDetails(r) : '');
+      return mainRow + (isExpanded ? renderRecordDetails(r) : '');
     }).join('');
   }
 
