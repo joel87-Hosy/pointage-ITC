@@ -242,7 +242,7 @@ async function getSuggestedPointageType(deviceId, knownAgentName) {
 
   const arriveeDone = arriveeDoneByDevice || arriveeDoneByName;
   const sortieDone = sortieDoneByDevice || sortieDoneByName;
-  const agent = registeredAgent || (knownName ? { nom_agent: knownName, nom_normalise: knownNameNormalise } : null);
+  const agent = registeredAgent || null;
 
   return {
     suggestedType: arriveeDone ? 'sortie' : 'arrivee',
