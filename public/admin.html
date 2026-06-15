@@ -734,6 +734,14 @@
         <button class="btn grey" style="margin-left:auto" onclick="loadAlertes()">&#8635; Actualiser</button>
       </div>
 
+      <div style="display:flex;gap:10px;margin-bottom:18px;flex-wrap:wrap;align-items:center">
+        <label style="font-size:13px;font-weight:600;color:#555" for="alrt-mois-filter">Mois :</label>
+        <select id="alrt-mois-filter" onchange="renderAlertesFromCache()" style="padding:7px 12px;border:1.5px solid #d0d7e3;border-radius:7px;font-size:13px">
+          <option value="">Tous les mois</option>
+        </select>
+        <button class="btn" onclick="renderAlertesFromCache()">Afficher le rapport</button>
+      </div>
+
       <!-- Cartes résumé -->
       <div class="alert-stats">
         <div class="alert-stat-card red">
@@ -750,6 +758,20 @@
         </div>
       </div>
 
+      <!-- Cumul mensuel heures travaillees par agent -->
+      <div class="alerte-section-title cumul" style="margin-top:30px">
+        <span>&#128197; Cumul mensuel des heures de travail par agent</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Agent</th><th>Mois</th><th>Total heures de travail</th>
+          </tr></thead>
+          <tbody id="tbody-cumul-travail"></tbody>
+        </table>
+        <p id="empty-cumul-travail" class="empty" style="display:none">Aucune heure de travail cumulée.</p>
+      </div>
+
       <!-- Retards -->
       <div class="alerte-section-title retard">
         <span>&#9888; Retards</span>
@@ -763,6 +785,20 @@
           <tbody id="tbody-retards"></tbody>
         </table>
         <p id="empty-retards" class="empty" style="display:none">Aucun retard détecté. &#10004;</p>
+      </div>
+
+      <!-- Cumul mensuel retards par agent -->
+      <div class="alerte-section-title cumul" style="margin-top:30px">
+        <span>&#128197; Cumul mensuel des retards par agent</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th>Agent</th><th>Mois</th><th>Total retards</th>
+          </tr></thead>
+          <tbody id="tbody-cumul-retards"></tbody>
+        </table>
+        <p id="empty-cumul-retards" class="empty" style="display:none">Aucun retard cumulé.</p>
       </div>
 
       <!-- Heures supplémentaires -->
@@ -1333,17 +1369,101 @@
     return `${Math.floor(min / 60)}h${String(Math.round(min % 60)).padStart(2, '0')}`;
   }
 
+  let alertesDataCache = null;
+
   async function loadAlertes() {
     try {
       const res  = await fetch('/alertes');
       const data = await res.json();
-      renderAlertes(data);
+      alertesDataCache = data;
+      fillAlertesMonthOptions(data);
+      renderAlertesFromCache();
     } catch {
       console.error('Impossible de charger les alertes.');
     }
   }
 
-  function renderAlertes({ retards, hsSup, cumulHS }) {
+  function moisKeyFromDateFR(date) {
+    const [, m, y] = (date || '').split('/');
+    return m && y ? `${m}/${y}` : '';
+  }
+
+  function compareMoisDesc(a, b) {
+    const [ma, ya] = a.split('/').map(Number);
+    const [mb, yb] = b.split('/').map(Number);
+    return new Date(yb || 0, (mb || 1) - 1) - new Date(ya || 0, (ma || 1) - 1);
+  }
+
+  function labelMois(mois) {
+    const [m, y] = mois.split('/').map(Number);
+    if (!m || !y) return mois;
+    return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  }
+
+  function fillAlertesMonthOptions({ retards = [], hsSup = [], cumulHS = [], cumulRetards = [], cumulTravail = [] }) {
+    const select = document.getElementById('alrt-mois-filter');
+    const current = select.value;
+    const moisSet = new Set([
+      ...retards.map(r => moisKeyFromDateFR(r.date)).filter(Boolean),
+      ...hsSup.map(r => moisKeyFromDateFR(r.date)).filter(Boolean)
+    ]);
+
+    [...cumulHS, ...cumulRetards, ...cumulTravail].forEach(agent => {
+      (agent.mois || []).forEach(m => moisSet.add(m.mois));
+    });
+
+    const options = [...moisSet].sort(compareMoisDesc);
+    select.innerHTML = '<option value="">Tous les mois</option>' +
+      options.map(m => `<option value="${escHtml(m)}">${escHtml(labelMois(m))}</option>`).join('');
+
+    select.value = options.includes(current) ? current : '';
+  }
+
+  function filterCumulByMonth(cumul, selectedMois) {
+    if (!selectedMois) return cumul;
+    return cumul
+      .map(agent => ({
+        ...agent,
+        mois: (agent.mois || []).filter(m => m.mois === selectedMois)
+      }))
+      .filter(agent => agent.mois.length > 0);
+  }
+
+  function renderAlertesFromCache() {
+    if (alertesDataCache) renderAlertes(alertesDataCache);
+  }
+
+  function renderCumulMensuel(cumul, tbodyId, emptyId, badgeClass, icon) {
+    const tbody = document.getElementById(tbodyId);
+    const empty = document.getElementById(emptyId);
+    if (cumul.length === 0) {
+      tbody.innerHTML = ''; empty.style.display = 'block';
+      return;
+    }
+
+    empty.style.display = 'none';
+    const rows = [];
+    cumul.forEach(agent => {
+      agent.mois.forEach((m, mi) => {
+        const bg = mi % 2 === 0 ? '#e3f2fd22' : '#fff';
+        rows.push(`<tr style="background:${bg}">
+          ${mi === 0 ? `<td rowspan="${agent.mois.length}" style="font-weight:700;vertical-align:middle">${escHtml(agent.nom_agent)}</td>` : ''}
+          <td>${escHtml(m.mois)}</td>
+          <td><span class="${badgeClass}">${icon} ${fmtMinAlerte(m.minutes)}</span></td>
+        </tr>`);
+      });
+    });
+    tbody.innerHTML = rows.join('');
+  }
+
+  function renderAlertes({ retards = [], hsSup = [], cumulHS = [], cumulRetards = [], cumulTravail = [] }) {
+    const selectedMois = document.getElementById('alrt-mois-filter').value;
+    retards = selectedMois ? retards.filter(r => moisKeyFromDateFR(r.date) === selectedMois) : retards;
+    hsSup = selectedMois ? hsSup.filter(r => moisKeyFromDateFR(r.date) === selectedMois) : hsSup;
+    cumulHS = filterCumulByMonth(cumulHS, selectedMois);
+    cumulRetards = filterCumulByMonth(cumulRetards, selectedMois);
+    cumulTravail = filterCumulByMonth(cumulTravail, selectedMois);
+
     // — Stats cartes
     document.getElementById('alrt-nb-retards').textContent      = retards.length;
     document.getElementById('alrt-nb-hs').textContent            = hsSup.length;
@@ -1403,26 +1523,10 @@
       }).join('');
     }
 
-    // — Cumul mensuel HS
-    const tbC = document.getElementById('tbody-cumul');
-    const emC = document.getElementById('empty-cumul');
-    if (cumulHS.length === 0) {
-      tbC.innerHTML = ''; emC.style.display = 'block';
-    } else {
-      emC.style.display = 'none';
-      const rows = [];
-      cumulHS.forEach(agent => {
-        agent.mois.forEach((m, mi) => {
-          const bg = mi % 2 === 0 ? '#e3f2fd22' : '#fff';
-          rows.push(`<tr style="background:${bg}">
-            ${mi === 0 ? `<td rowspan="${agent.mois.length}" style="font-weight:700;vertical-align:middle">${escHtml(agent.nom_agent)}</td>` : ''}
-            <td>${escHtml(m.mois)}</td>
-            <td><span class="bdg-info">⌛ ${fmtMinAlerte(m.minutes)}</span></td>
-          </tr>`);
-        });
-      });
-      tbC.innerHTML = rows.join('');
-    }
+    // — Cumuls mensuels
+    renderCumulMensuel(cumulTravail, 'tbody-cumul-travail', 'empty-cumul-travail', 'bdg-info', '⏱');
+    renderCumulMensuel(cumulRetards, 'tbody-cumul-retards', 'empty-cumul-retards', 'bdg-retard', '⚠️');
+    renderCumulMensuel(cumulHS, 'tbody-cumul', 'empty-cumul', 'bdg-info', '⌛');
   }
 
   // Chargement initial des alertes (badge onglet)

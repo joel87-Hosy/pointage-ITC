@@ -994,6 +994,8 @@ app.get('/alertes', async (req, res) => {
     const retards = [];
     const hsSup   = [];
     const agentHSMap = {}; // cumul HS mensuel par agent
+    const agentRetardMap = {}; // cumul retards mensuel par agent
+    const agentTravailJourMap = {}; // arrivee/sortie par agent et par jour
 
     for (const r of records) {
       const heureMin = timeStrToMinutes(r.heure);
@@ -1001,15 +1003,26 @@ app.get('/alertes', async (req, res) => {
       const [d, m, y] = (r.date || '').split('/');
       const moisKey  = m && y ? `${m}/${y}` : '??';
 
+      if (!agentTravailJourMap[key]) agentTravailJourMap[key] = { nom_agent: r.nom_agent, jours: {} };
+      agentTravailJourMap[key].nom_agent = r.nom_agent;
+      if (!agentTravailJourMap[key].jours[r.date]) {
+        agentTravailJourMap[key].jours[r.date] = { arrivee: null, sortie: null };
+      }
+      if (r.type === 'sortie') agentTravailJourMap[key].jours[r.date].sortie = r.heure;
+      else agentTravailJourMap[key].jours[r.date].arrivee = r.heure;
+
       if (r.type !== 'sortie') {
         // Retard
         if (heureMin > SEUIL_RETARD_MIN) {
+          const retardMin = heureMin - HEURE_DEBUT_MIN;
           retards.push({
             nom_agent:    r.nom_agent,
             date:         r.date,
             heure:        r.heure,
-            retard_min:   heureMin - HEURE_DEBUT_MIN
+            retard_min:   retardMin
           });
+          if (!agentRetardMap[key]) agentRetardMap[key] = { nom_agent: r.nom_agent, mois: {} };
+          agentRetardMap[key].mois[moisKey] = (agentRetardMap[key].mois[moisKey] || 0) + retardMin;
         }
       } else {
         // Heures supplémentaires
@@ -1030,18 +1043,37 @@ app.get('/alertes', async (req, res) => {
     retards.sort((a, b) => parseDateFR(b.date) - parseDateFR(a.date));
     hsSup.sort((a, b) => parseDateFR(b.date) - parseDateFR(a.date));
 
-    const cumulHS = Object.values(agentHSMap).map(agent => ({
-      nom_agent: agent.nom_agent,
-      mois: Object.entries(agent.mois)
-        .map(([mois, minutes]) => ({ mois, minutes }))
-        .sort((a, b) => {
-          const [ma, ya] = a.mois.split('/').map(Number);
-          const [mb, yb] = b.mois.split('/').map(Number);
-          return new Date(yb, mb - 1) - new Date(ya, ma - 1);
-        })
-    })).sort((a, b) => a.nom_agent.localeCompare(b.nom_agent, 'fr'));
+    function buildCumulMensuel(map) {
+      return Object.values(map).map(agent => ({
+        nom_agent: agent.nom_agent,
+        mois: Object.entries(agent.mois)
+          .map(([mois, minutes]) => ({ mois, minutes }))
+          .sort((a, b) => {
+            const [ma, ya] = a.mois.split('/').map(Number);
+            const [mb, yb] = b.mois.split('/').map(Number);
+            return new Date(yb, mb - 1) - new Date(ya, ma - 1);
+          })
+      })).sort((a, b) => a.nom_agent.localeCompare(b.nom_agent, 'fr'));
+    }
 
-    res.json({ retards, hsSup, cumulHS });
+    const agentTravailMap = {};
+    Object.entries(agentTravailJourMap).forEach(([key, agent]) => {
+      Object.entries(agent.jours).forEach(([date, jour]) => {
+        if (!jour.arrivee || !jour.sortie) return;
+        const minutes = timeStrToMinutes(jour.sortie) - timeStrToMinutes(jour.arrivee);
+        if (minutes <= 0) return;
+        const [, m, y] = (date || '').split('/');
+        const moisKey = m && y ? `${m}/${y}` : '??';
+        if (!agentTravailMap[key]) agentTravailMap[key] = { nom_agent: agent.nom_agent, mois: {} };
+        agentTravailMap[key].mois[moisKey] = (agentTravailMap[key].mois[moisKey] || 0) + minutes;
+      });
+    });
+
+    const cumulHS = buildCumulMensuel(agentHSMap);
+    const cumulRetards = buildCumulMensuel(agentRetardMap);
+    const cumulTravail = buildCumulMensuel(agentTravailMap);
+
+    res.json({ retards, hsSup, cumulHS, cumulRetards, cumulTravail });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Erreur serveur.' });
