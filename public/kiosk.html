@@ -249,7 +249,7 @@
       }
       #print-section h2 { font-size: 28px; color: #0d47a1; }
       #print-section p  { font-size: 14px; color: #444; }
-      #static-qr-img    { width: 320px; height: 320px; border-radius: 12px; }
+      #static-qr-img    { width: 420px; height: 420px; border: 0; border-radius: 0; image-rendering: pixelated; }
     }
   </style>
 </head>
@@ -584,9 +584,16 @@
       const res  = await fetch('/qrcode-static');
       const data = await res.json();
       if (!res.ok) return;
-      document.getElementById('static-qr-img').src = data.qrcode;
+      const image = document.getElementById('static-qr-img');
+      image.onload = () => { image.dataset.ready = 'true'; };
+      image.src = data.qrcode;
     } catch { /* silencieux */ }
   }
+
+  window.addEventListener('beforeprint', () => {
+    const image = document.getElementById('static-qr-img');
+    if (!image.complete || !image.naturalWidth) loadStaticQR();
+  });
 
   // ─── Initialisation ───────────────────────────────────────────────────────
   loadQR();

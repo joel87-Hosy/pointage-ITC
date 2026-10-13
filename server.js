@@ -857,11 +857,17 @@ app.get('/qrcode', async (req, res) => {
  * la page doit creer une session courte avant de pouvoir pointer.
  */
 app.get('/qrcode-static', async (req, res) => {
-  const url = `${getRequestBaseURL(req)}/pointage?static=${STATIC_QR_TOKEN}`;
+  // Use the configured public URL when available so the printed poster always
+  // points to the same host agents use. Request headers can be rewritten by
+  // reverse proxies and may otherwise produce a QR with an internal hostname.
+  const baseURL = process.env.APP_URL
+    ? getAppBaseURL()
+    : getRequestBaseURL(req);
+  const url = `${baseURL}/pointage?static=${STATIC_QR_TOKEN}`;
   try {
     const dataURL = await QRCode.toDataURL(url, {
-      width: 400, margin: 2, errorCorrectionLevel: 'M',
-      color: { dark: '#1b5e20', light: '#ffffff' }
+      width: 800, margin: 4, errorCorrectionLevel: 'H',
+      color: { dark: '#000000', light: '#ffffff' }
     });
     res.json({ qrcode: dataURL, url, expires_in_ms: SESSION_TTL_MS });
   } catch {
