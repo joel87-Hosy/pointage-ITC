@@ -60,7 +60,7 @@ function lookupBadge(badgeId) {
 // pour que la 1ère requête d'un agent ne subisse pas le délai de connexion
 store.warmup()
   .then(() => console.log(`  ${store.name} connecte`))
-  .catch(e => console.error(`  ${store.name} connexion echouee :`, e.message));
+  .catch(e => console.error(`  ${store.name} connexion echouee :`, e.message || e.code || String(e)));
 
 // Helper : retourne les enregistrements triés, filtrés par date optionnelle
 async function fetchRecords(date) {
