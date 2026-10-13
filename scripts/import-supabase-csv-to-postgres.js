@@ -70,9 +70,10 @@ async function main() {
     ssl: process.env.PGSSL === 'true' ? { rejectUnauthorized: false } : false
   });
 
+  const client = await pool.connect();
   try {
-    await pool.query('BEGIN');
-    await pool.query(`
+    await client.query('BEGIN');
+    await client.query(`
       CREATE TABLE IF NOT EXISTS pointages (
         id INTEGER PRIMARY KEY,
         badge_id TEXT NOT NULL DEFAULT 'non-fourni',
@@ -94,13 +95,13 @@ async function main() {
     if (ids.some(id => !Number.isInteger(id) || id <= 0)) throw new Error('Le CSV contient un ID invalide.');
     if (new Set(ids).size !== ids.length) throw new Error('Le CSV contient des ID en double.');
 
-    const existing = await pool.query('SELECT COUNT(*)::int AS count FROM pointages');
+    const existing = await client.query('SELECT COUNT(*)::int AS count FROM pointages');
     if (existing.rows[0].count > 0) {
       throw new Error('La table pointages locale n’est pas vide; import annulé pour éviter d’écraser des données.');
     }
 
     for (const row of rows) {
-      await pool.query(
+      await client.query(
         `INSERT INTO pointages (
           id, badge_id, nom_agent, nom_normalise, code_agent, date, heure, type,
           device_id, user_agent, lat, lng, distance_m
@@ -114,15 +115,16 @@ async function main() {
       );
     }
 
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_pointages_date ON pointages (date)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_pointages_nom_date_type ON pointages (nom_normalise, date, type)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_pointages_device_date_type ON pointages (device_id, date, type)');
-    await pool.query('COMMIT');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_pointages_date ON pointages (date)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_pointages_nom_date_type ON pointages (nom_normalise, date, type)');
+    await client.query('CREATE INDEX IF NOT EXISTS idx_pointages_device_date_type ON pointages (device_id, date, type)');
+    await client.query('COMMIT');
     console.log(`Import terminé : ${rows.length} pointage(s) importé(s).`);
   } catch (error) {
-    await pool.query('ROLLBACK').catch(() => {});
+    await client.query('ROLLBACK').catch(() => {});
     throw error;
   } finally {
+    client.release();
     await pool.end();
   }
 }
