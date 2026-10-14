@@ -280,6 +280,8 @@
     // Un lien direct ou un token malforme ne doit jamais afficher le formulaire.
     const HAS_VALID_TOKEN_FORMAT = typeof TOKEN === 'string' && /^[0-9a-f]{16}$/.test(TOKEN);
     const HAS_VALID_STATIC_QR_FORMAT = typeof STATIC_QR === 'string' && /^[0-9a-f]{16}$/.test(STATIC_QR);
+    const HAS_INVALID_QR_PARAMETER = (TOKEN !== null && !HAS_VALID_TOKEN_FORMAT) ||
+      (STATIC_QR !== null && !HAS_VALID_STATIC_QR_FORMAT);
 
     const form          = document.getElementById('form');
     const btn           = document.getElementById('btn');
@@ -481,7 +483,7 @@
       const navigationType = getNavigationType();
 
       // Acces direct, raccourci telephone ou ancien lien expire: refus.
-      if (!HAS_VALID_TOKEN_FORMAT && !HAS_VALID_STATIC_QR_FORMAT) {
+      if (HAS_INVALID_QR_PARAMETER || (!HAS_VALID_TOKEN_FORMAT && !HAS_VALID_STATIC_QR_FORMAT)) {
         SESSION_ID = null;
         showFatalError("Lien de pointage invalide. Scannez le QR code affiche a l'ecran.");
         return;

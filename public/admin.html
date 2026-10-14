@@ -1075,7 +1075,7 @@
   // ─── Impression de l'affiche statique ─────────────────────────────────────
   async function printStaticQR() {
     try {
-      const res  = await fetch('/qrcode-static');
+      const res  = await fetch('/qrcode-static', { credentials: 'same-origin' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'QR statique indisponible');
       const win  = window.open('', '_blank');

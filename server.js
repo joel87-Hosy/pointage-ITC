@@ -101,7 +101,9 @@ const HS_GRACE_MIN         = 60;            // délai supplémentaire après l'h
 const HMAC_SECRET = crypto.randomBytes(32).toString('hex');
 const STATIC_QR_TOKEN = process.env.STATIC_QR_TOKEN ||
   crypto.createHash('sha256')
-    .update(`${process.env.APP_URL || 'local'}|pointage-static-v1`)
+    // Keep the static QR valid if APP_URL is corrected after the poster was
+    // printed. Set STATIC_QR_TOKEN explicitly when rotating/replacing it.
+    .update('pointage-static-v1')
     .digest('hex')
     .slice(0, 16);
 
@@ -398,7 +400,6 @@ function isAdminProtectedPath(pathname) {
     '/records',
     '/reset',
     '/qrcode',
-    '/qrcode-static',
     '/export/pdf',
     '/export/excel',
     '/alertes',
