@@ -482,16 +482,12 @@
     async function initializeSession() {
       const navigationType = getNavigationType();
 
-      // Acces direct, raccourci telephone ou ancien lien expire: refus.
+      // L'URL est la source du QR. Certains navigateurs mobiles classent
+      // l'ouverture d'un QR comme une navigation "reload"; ne rejeter le QR
+      // statique que si les paramètres d'URL sont réellement absents/invalides.
       if (HAS_INVALID_QR_PARAMETER || (!HAS_VALID_TOKEN_FORMAT && !HAS_VALID_STATIC_QR_FORMAT)) {
         SESSION_ID = null;
         showFatalError("Lien de pointage invalide. Scannez le QR code affiche a l'ecran.");
-        return;
-      }
-
-      if (HAS_VALID_STATIC_QR_FORMAT && navigationType === 'reload') {
-        SESSION_ID = null;
-        showFatalError("Page actualisee depuis un raccourci. Rescannez le QR code statique.");
         return;
       }
 
@@ -507,7 +503,7 @@
           body: JSON.stringify({
             token: HAS_VALID_TOKEN_FORMAT ? TOKEN : null,
             static_qr: HAS_VALID_STATIC_QR_FORMAT ? STATIC_QR : null,
-            navigation_type: navigationType,
+            navigation_type: HAS_VALID_STATIC_QR_FORMAT ? 'qr' : navigationType,
             device_id: DEVICE_ID,
             known_agent_name: getLocalAgentName()
           })
