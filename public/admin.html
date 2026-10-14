@@ -1078,7 +1078,11 @@
       const res  = await fetch('/qrcode-static', { credentials: 'same-origin' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'QR statique indisponible');
-      if (!data.qrcode || !data.url || !/[?&]static=[0-9a-f]{16}(?:&|$)/.test(data.url)) {
+      let qrUrl;
+      try { qrUrl = new URL(data.url, window.location.origin); } catch {}
+      const staticToken = qrUrl && qrUrl.searchParams.get('static');
+      if (!data.qrcode || !qrUrl || qrUrl.pathname !== '/pointage' ||
+          !staticToken || !/^[0-9a-f]{16}$/.test(staticToken)) {
         throw new Error('Le QR statique reçu ne contient pas un lien valide.');
       }
       const win  = window.open('', '_blank');
@@ -1090,6 +1094,7 @@
           h1   { color:#0d47a1; font-size:32px; margin-bottom:8px; }
           p    { color:#555; font-size:16px; margin-bottom:24px; }
           img  { width:420px; height:420px; object-fit:contain; image-rendering:pixelated; }
+          .qr-url { font-size:11px; color:#666; overflow-wrap:anywhere; }
           .note{ margin-top:20px; font-size:13px; color:#888; }
         </style>
       </head><body>
@@ -1097,6 +1102,7 @@
         <p>Scannez ce code avec votre téléphone pour enregistrer votre présence.</p>
         <img src="${data.qrcode}" alt="QR Code pointage" onload="window.print()" onerror="document.getElementById('error').textContent='Impossible de charger le QR code.'">
         <p id="error" style="color:#b00020"></p>
+        <p class="qr-url">${qrUrl.href}</p>
         <p class="note">&#128204; Vous devez être dans les locaux pour pointer.<br>Votre position GPS sera vérifiée automatiquement.</p>
         <script>window.addEventListener('load',()=>setTimeout(()=>{if(!document.querySelector('img').complete) return; if(document.querySelector('img').naturalWidth) window.print();},100));<\/script>
       </body></html>`);
