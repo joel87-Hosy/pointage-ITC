@@ -1076,14 +1076,21 @@
   async function printStaticQR() {
     try {
       const res  = await fetch('/qrcode-static', { credentials: 'same-origin' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'QR statique indisponible');
+      const responseText = await res.text();
+      let data;
+      try { data = JSON.parse(responseText); }
+      catch {
+        const type = res.headers.get('content-type') || 'inconnu';
+        throw new Error(`Le serveur a renvoyé une réponse non JSON (HTTP ${res.status}, ${type}).`);
+      }
+      if (!res.ok) throw new Error(data.error || `QR statique indisponible (HTTP ${res.status}).`);
       let qrUrl;
       try { qrUrl = new URL(data.url, window.location.origin); } catch {}
       const staticToken = qrUrl && qrUrl.searchParams.get('static');
       if (!data.qrcode || !qrUrl || qrUrl.pathname !== '/pointage' ||
           !staticToken || !/^[0-9a-f]{16}$/.test(staticToken)) {
-        throw new Error('Le QR statique reçu ne contient pas un lien valide.');
+        const received = typeof data.url === 'string' ? data.url.slice(0, 180) : 'URL absente';
+        throw new Error(`Réponse QR invalide. URL reçue : ${received}`);
       }
       const win  = window.open('', '_blank');
       if (!win) throw new Error('Autorisez les fenêtres popup pour imprimer l’affiche.');
