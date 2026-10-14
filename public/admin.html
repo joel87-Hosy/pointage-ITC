@@ -1088,7 +1088,7 @@
       try { qrUrl = new URL(data.url, window.location.origin); } catch {}
       const staticToken = qrUrl && qrUrl.searchParams.get('static');
       if (!data.qrcode || !qrUrl || qrUrl.pathname !== '/pointage' ||
-          !staticToken || !/^[0-9a-f]{16}$/.test(staticToken)) {
+          !staticToken || staticToken.length > 128) {
         const received = typeof data.url === 'string' ? data.url.slice(0, 180) : 'URL absente';
         throw new Error(`Réponse QR invalide. URL reçue : ${received}`);
       }

@@ -280,9 +280,11 @@
     // Traiter les valeurs communes invalides comme l'absence de token
     if (TOKEN === 'undefined' || TOKEN === 'null' || TOKEN === '') TOKEN = null;
     if (STATIC_QR === 'undefined' || STATIC_QR === 'null' || STATIC_QR === '') STATIC_QR = null;
-    // Un lien direct ou un token malforme ne doit jamais afficher le formulaire.
+    // Le QR dynamique utilise un token HMAC hexadécimal. Le QR statique peut
+    // utiliser une valeur personnalisée définie dans STATIC_QR_TOKEN (.env).
     const HAS_VALID_TOKEN_FORMAT = typeof TOKEN === 'string' && /^[0-9a-f]{16}$/.test(TOKEN);
-    const HAS_VALID_STATIC_QR_FORMAT = typeof STATIC_QR === 'string' && /^[0-9a-f]{16}$/.test(STATIC_QR);
+    const HAS_VALID_STATIC_QR_FORMAT = typeof STATIC_QR === 'string' &&
+      /^[a-zA-Z0-9._~!$&'()*+,;=:@%/-]{1,128}$/.test(STATIC_QR);
     const HAS_INVALID_QR_PARAMETER = (TOKEN !== null && !HAS_VALID_TOKEN_FORMAT) ||
       (STATIC_QR !== null && !HAS_VALID_STATIC_QR_FORMAT);
 
