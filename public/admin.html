@@ -1078,26 +1078,31 @@
       const res  = await fetch('/qrcode-static', { credentials: 'same-origin' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'QR statique indisponible');
+      if (!data.qrcode || !data.url || !/[?&]static=[0-9a-f]{16}(?:&|$)/.test(data.url)) {
+        throw new Error('Le QR statique reçu ne contient pas un lien valide.');
+      }
       const win  = window.open('', '_blank');
+      if (!win) throw new Error('Autorisez les fenêtres popup pour imprimer l’affiche.');
       win.document.write(`<!DOCTYPE html><html lang="fr"><head>
         <meta charset="UTF-8"><title>Affiche de Pointage</title>
         <style>
           body { font-family:'Segoe UI',sans-serif; text-align:center; padding:60px 40px; background:#fff; }
           h1   { color:#0d47a1; font-size:32px; margin-bottom:8px; }
           p    { color:#555; font-size:16px; margin-bottom:24px; }
-          img  { width:320px; height:320px; border-radius:12px; border:4px solid #1b5e20; }
+          img  { width:420px; height:420px; object-fit:contain; image-rendering:pixelated; }
           .note{ margin-top:20px; font-size:13px; color:#888; }
         </style>
       </head><body>
         <h1>&#128203; Pointage des Agents</h1>
         <p>Scannez ce code avec votre téléphone pour enregistrer votre présence.</p>
-        <img src="${data.qrcode}" alt="QR Code pointage">
+        <img src="${data.qrcode}" alt="QR Code pointage" onload="window.print()" onerror="document.getElementById('error').textContent='Impossible de charger le QR code.'">
+        <p id="error" style="color:#b00020"></p>
         <p class="note">&#128204; Vous devez être dans les locaux pour pointer.<br>Votre position GPS sera vérifiée automatiquement.</p>
-        <script>window.onload=()=>window.print();<\/script>
+        <script>window.addEventListener('load',()=>setTimeout(()=>{if(!document.querySelector('img').complete) return; if(document.querySelector('img').naturalWidth) window.print();},100));<\/script>
       </body></html>`);
       win.document.close();
-    } catch {
-      alert('Impossible de charger le QR statique.');
+    } catch (error) {
+      alert('Impossible de générer l’affiche QR : ' + (error.message || 'erreur inconnue'));
     }
   }
 

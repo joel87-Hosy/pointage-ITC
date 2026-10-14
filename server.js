@@ -864,12 +864,14 @@ app.get('/qrcode-static', async (req, res) => {
   const baseURL = process.env.APP_URL
     ? getAppBaseURL()
     : getRequestBaseURL(req);
-  const url = `${baseURL}/pointage?static=${STATIC_QR_TOKEN}`;
+  const url = new URL('/pointage', `${baseURL}/`).toString() +
+    `?static=${encodeURIComponent(STATIC_QR_TOKEN)}`;
   try {
     const dataURL = await QRCode.toDataURL(url, {
       width: 800, margin: 4, errorCorrectionLevel: 'H',
       color: { dark: '#000000', light: '#ffffff' }
     });
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.json({ qrcode: dataURL, url, expires_in_ms: SESSION_TTL_MS });
   } catch {
     res.status(500).json({ error: 'Impossible de generer le QR code statique.' });

@@ -272,8 +272,11 @@
 
     // ─── Récupération du token dans l'URL ────────────────────────────────────
     const urlParams = new URLSearchParams(window.location.search);
+    // Certains lecteurs de QR ou portails intermédiaires recopient les
+    // paramètres après # au lieu de les laisser dans la query string.
+    const fragmentParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     let TOKEN = urlParams.get('token');
-    let STATIC_QR = urlParams.get('static');
+    let STATIC_QR = urlParams.get('static') || fragmentParams.get('static');
     // Traiter les valeurs communes invalides comme l'absence de token
     if (TOKEN === 'undefined' || TOKEN === 'null' || TOKEN === '') TOKEN = null;
     if (STATIC_QR === 'undefined' || STATIC_QR === 'null' || STATIC_QR === '') STATIC_QR = null;
